@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>概念板块监控 - 测试</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: #0f1117;
+      color: #ffffff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1800px;
+      margin: 0 auto;
+    }
+
+    .status-bar {
+      background: #1a1d2e;
+      padding: 16px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+    }
+
+    .status-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #2d2f3e;
+    }
+
+    .status-item:last-child {
+      border-bottom: none;
+    }
+
+    .label {
+      color: #8c8c8c;
+    }
+
+    .value {
+      color: #ffffff;
+      font-weight: 500;
+    }
+
+    .ready {
+      color: #52c41a;
+    }
+
+    .updating {
+      color: #faad14;
+    }
+
+    .not-ready {
+      color: #ff4d4f;
+    }
+
+    .button {
+      background: #40a9ff;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-top: 12px;
+    }
+
+    .button:hover {
+      background: #096dd9;
+    }
+
+    .button:disabled {
+      background: #434343;
+      cursor: not-allowed;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #8c8c8c;
+    }
+
+    .error {
+      text-align: center;
+      padding: 40px;
+      color: #ff4d4f;
+    }
+
+    h1 {
+      margin-bottom: 20px;
+    }
+
+    .log {
+      background: #1a1d2e;
+      padding: 16px;
+      border-radius: 4px;
+      margin-top: 20px;
+      max-height: 400px;
+      overflow-y: auto;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 12px;
+    }
+
+    .log-entry {
+      padding: 4px 0;
+      color: #8c8c8c;
+    }
+
+    .log-entry.info {
+      color: #40a9ff;
+    }
+
+    .log-entry.success {
+      color: #52c41a;
+    }
+
+    .log-entry.error {
+      color: #ff4d4f;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📊 概念板块监控 - 系统状态</h1>
+
+    <div class="status-bar">
+      <h3 style="margin-bottom: 12px;">系统状态</h3>
+      <div class="status-item">
+        <span class="label">API连接:</span>
+        <span class="value" id="api-status">检查中...</span>
+      </div>
+      <div class="status-item">
+        <span class="label">数据就绪:</span>
+        <span class="value" id="data-ready">-</span>
+      </div>
+      <div class="status-item">
+        <span class="label">正在更新:</span>
+        <span class="value" id="is-updating">-</span>
+      </div>
+      <div class="status-item">
+        <span class="label">最后更新:</span>
+        <span class="value" id="last-update">-</span>
+      </div>
+      <div class="status-item">
+        <span class="label">板块总数:</span>
+        <span class="value" id="total-concepts">-</span>
+      </div>
+
+      <button class="button" onclick="refreshData()">🔄 触发更新</button>
+      <button class="button" onclick="checkStatus()">📡 检查状态</button>
+      <button class="button" onclick="testTopAPI()">🧪 测试涨幅前20接口</button>
+    </div>
+
+    <div class="log" id="log">
+      <div class="log-entry">等待操作...</div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = 'http://localhost:8000';
+    let autoRefreshInterval = null;
+
+    function addLog(message, type = 'info') {
+      const logDiv = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      logDiv.appendChild(entry);
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    async function checkStatus() {
+      addLog('检查系统状态...', 'info');
+
+      try {
+        const response = await fetch(`${API_BASE}/api/concept-monitor/status`);
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        document.getElementById('api-status').textContent = '✅ 已连接';
+        document.getElementById('api-status').className = 'value ready';
+
+        document.getElementById('data-ready').textContent = data.is_ready ? '✅ 是' : '❌ 否';
+        document.getElementById('data-ready').className = `value ${data.is_ready ? 'ready' : 'not-ready'}`;
+
+        document.getElementById('is-updating').textContent = data.is_updating ? '⏳ 是' : '✅ 否';
+        document.getElementById('is-updating').className = `value ${data.is_updating ? 'updating' : 'ready'}`;
+
+        document.getElementById('last-update').textContent = data.last_update || '从未更新';
+        document.getElementById('total-concepts').textContent = data.total_concepts || 0;
+
+        if (data.is_ready) {
+          addLog(`✅ 数据已就绪！板块总数: ${data.total_concepts}`, 'success');
+        } else if (data.is_updating) {
+          addLog('⏳ 正在更新中...（预计5-10分钟）', 'info');
+        } else {
+          addLog('⚠️ 数据未就绪，请点击"触发更新"按钮', 'error');
+        }
+
+      } catch (error) {
+        document.getElementById('api-status').textContent = '❌ 连接失败';
+        document.getElementById('api-status').className = 'value not-ready';
+        addLog(`❌ 连接失败: ${error.message}`, 'error');
+      }
+    }
+
+    async function refreshData() {
+      addLog('触发数据更新...', 'info');
+
+      try {
+        const response = await fetch(`${API_BASE}/api/concept-monitor/refresh`, {
+          method: 'POST'
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        if (data.success) {
+          addLog('✅ 更新已触发！请等待5-10分钟', 'success');
+
+          // 启动自动检查
+          if (!autoRefreshInterval) {
+            autoRefreshInterval = setInterval(checkStatus, 10000); // 10秒检查一次
+            addLog('🔄 已启动自动状态检查（每10秒）', 'info');
+          }
+        }
+
+      } catch (error) {
+        addLog(`❌ 触发更新失败: ${error.message}`, 'error');
+      }
+    }
+
+    async function testTopAPI() {
+      addLog('测试涨幅前20接口...', 'info');
+
+      try {
+        const response = await fetch(`${API_BASE}/api/concept-monitor/top?n=5`);
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        if (data.success) {
+          addLog(`✅ 接口正常！返回 ${data.total} 个板块`, 'success');
+
+          if (data.total > 0) {
+            addLog('前5板块:', 'info');
+            data.data.slice(0, 5).forEach((item, i) => {
+              addLog(`  ${i+1}. ${item.name} (${item.changePct.toFixed(2)}%) 涨停:${item.limitUp}`, 'success');
+            });
+          }
+        }
+
+      } catch (error) {
+        addLog(`❌ 接口测试失败: ${error.message}`, 'error');
+      }
+    }
+
+    // 页面加载时检查状态
+    window.addEventListener('DOMContentLoaded', () => {
+      addLog('页面加载完成', 'info');
+      checkStatus();
+    });
+  </script>
+</body>
+</html>

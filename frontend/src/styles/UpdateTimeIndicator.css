@@ -1,0 +1,73 @@
+.update-time-indicator {
+  display: flex;
+  gap: 1.5rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  align-items: center;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.update-time-indicator__timeframe {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.update-time-indicator__tf-label {
+  font-weight: 600;
+  color: #555;
+  white-space: nowrap;
+}
+
+.update-time-indicator__times {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.update-time-indicator__time {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.update-time-indicator__label {
+  color: #888;
+  white-space: nowrap;
+}
+
+.update-time-indicator__value {
+  color: #333;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.update-time-indicator__value--next {
+  color: #1890ff;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .update-time-indicator {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .update-time-indicator__tf-label {
+    color: #aaa;
+  }
+
+  .update-time-indicator__label {
+    color: #999;
+  }
+
+  .update-time-indicator__value {
+    color: #ddd;
+  }
+
+  .update-time-indicator__value--next {
+    color: #40a9ff;
+  }
+}

@@ -1,0 +1,292 @@
+.momentum-signals-view {
+  padding: 20px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.momentum-signals-view__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.momentum-signals-view__title {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin: 0;
+}
+
+.momentum-signals-view__controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.momentum-signals-view__auto-refresh {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #555;
+  cursor: pointer;
+}
+
+.momentum-signals-view__auto-refresh input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.momentum-signals-view__refresh-btn {
+  padding: 8px 16px;
+  background: #2196f3;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.momentum-signals-view__refresh-btn:hover {
+  background: #1976d2;
+}
+
+.momentum-signals-view__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.momentum-signals-view__stat-card {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-left: 4px solid #9e9e9e;
+}
+
+.momentum-signals-view__stat-card--surge {
+  border-left-color: #ff9800;
+}
+
+.momentum-signals-view__stat-card--kline {
+  border-left-color: #4caf50;
+}
+
+.momentum-signals-view__stat-card--time {
+  border-left-color: #2196f3;
+}
+
+.momentum-signals-view__stat-label {
+  font-size: 13px;
+  color: #666;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.momentum-signals-view__stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+.momentum-signals-view__section {
+  margin-bottom: 32px;
+}
+
+.momentum-signals-view__section-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 16px;
+  padding-left: 12px;
+  border-left: 4px solid #2196f3;
+}
+
+.momentum-signals-view__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(450px, 1fr));
+  gap: 20px;
+}
+
+.signal-card {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.signal-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.signal-card__header {
+  padding: 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.signal-card__title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.signal-card__concept-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: white;
+}
+
+.signal-card__concept-code {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.signal-card__badge {
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  background: white;
+}
+
+.signal-card__badge--surge {
+  color: #ff9800;
+}
+
+.signal-card__badge--kline_pattern {
+  color: #4caf50;
+}
+
+.signal-card__body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.signal-card__info {
+  display: flex;
+  gap: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.signal-card__info-item {
+  display: flex;
+  gap: 8px;
+}
+
+.signal-card__info-label {
+  font-size: 13px;
+  color: #666;
+  font-weight: 500;
+}
+
+.signal-card__info-value {
+  font-size: 13px;
+  color: #1a1a1a;
+  font-weight: 600;
+}
+
+.signal-card__surge-details,
+.signal-card__kline-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #f5f5f5;
+  padding: 12px;
+  border-radius: 6px;
+}
+
+.signal-card__surge-row,
+.signal-card__kline-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.signal-card__surge-label,
+.signal-card__kline-label {
+  font-size: 13px;
+  color: #555;
+  font-weight: 500;
+}
+
+.signal-card__surge-value,
+.signal-card__kline-value {
+  font-size: 14px;
+  color: #1a1a1a;
+  font-weight: 600;
+}
+
+.signal-card__surge-delta {
+  color: #4caf50;
+  margin-left: 8px;
+  font-weight: 700;
+}
+
+.signal-card__kline-value--positive {
+  color: #f44336;
+}
+
+.signal-card__kline-value--negative {
+  color: #4caf50;
+}
+
+.signal-card__details-text {
+  padding: 12px;
+  background: #fff3e0;
+  border-left: 4px solid #ff9800;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #e65100;
+  font-weight: 500;
+}
+
+.momentum-signals-view__empty {
+  text-align: center;
+  padding: 60px 20px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.momentum-signals-view__empty p {
+  font-size: 18px;
+  color: #666;
+  margin: 8px 0;
+}
+
+.momentum-signals-view__empty-hint {
+  font-size: 14px !important;
+  color: #999 !important;
+}
+
+.momentum-signals-view__loading,
+.momentum-signals-view__error {
+  text-align: center;
+  padding: 40px;
+  font-size: 18px;
+  color: #666;
+}
+
+.momentum-signals-view__error {
+  color: #f44336;
+  background: #ffebee;
+  border-radius: 8px;
+  margin: 20px;
+}

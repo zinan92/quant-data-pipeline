@@ -1,0 +1,143 @@
+/* 对话框遮罩层 */
+.dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+/* 对话框内容 */
+.dialog-content {
+  background: #1a1d2e;
+  border: 1px solid #2a2d3e;
+  border-radius: 8px;
+  min-width: 400px;
+  max-width: 500px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+/* 对话框头部 */
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #2a2d3e;
+}
+
+.dialog-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.dialog-close {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+
+.dialog-close:hover {
+  color: #fff;
+}
+
+/* 对话框主体 */
+.dialog-body {
+  padding: 20px;
+}
+
+/* 表单 */
+.sector-form__group {
+  margin-bottom: 16px;
+}
+
+.sector-form__label {
+  display: block;
+  margin-bottom: 8px;
+  color: #ccc;
+  font-size: 14px;
+}
+
+.sector-form__input {
+  width: 100%;
+  padding: 10px 12px;
+  background: #0f111a;
+  border: 1px solid #2a2d3e;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.sector-form__input:focus {
+  border-color: #4a9eff;
+}
+
+.sector-form__input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sector-form__error {
+  color: #ff4444;
+  font-size: 13px;
+  margin-bottom: 16px;
+  padding: 8px;
+  background: rgba(255, 68, 68, 0.1);
+  border-radius: 4px;
+}
+
+.sector-form__actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.sector-form__btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sector-form__btn--primary {
+  background: #4a9eff;
+  color: #fff;
+}
+
+.sector-form__btn--primary:hover:not(:disabled) {
+  background: #3a8eef;
+}
+
+.sector-form__btn--primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sector-form__btn--secondary {
+  background: #2a2d3e;
+  color: #ccc;
+}
+
+.sector-form__btn--secondary:hover {
+  background: #3a3d4e;
+}

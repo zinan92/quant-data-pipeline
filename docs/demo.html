@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>板块监控 - Demo</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: #0f1117;
+      color: #ffffff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1800px;
+      margin: 0 auto;
+    }
+
+    .concept-table {
+      background: #1a1d2e;
+      border-radius: 4px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+
+    .table-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #2d2f3e;
+    }
+
+    .table-header h3 {
+      color: #ffffff;
+      font-size: 16px;
+      font-weight: 500;
+    }
+
+    .update-time {
+      color: #8c8c8c;
+      font-size: 12px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    thead {
+      background: #252835;
+    }
+
+    thead th {
+      color: #8c8c8c;
+      font-weight: 400;
+      padding: 10px 8px;
+      border-bottom: 1px solid #2d2f3e;
+      white-space: nowrap;
+      font-size: 12px;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid #2d2f3e;
+      transition: background 0.2s;
+    }
+
+    tbody tr:hover {
+      background: #252835;
+    }
+
+    tbody td {
+      padding: 10px 8px;
+      color: #ffffff;
+    }
+
+    td.center {
+      text-align: center;
+    }
+
+    td.right {
+      text-align: right;
+      font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+    }
+
+    td.name {
+      color: #40a9ff;
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    td.name:hover {
+      text-decoration: underline;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #8c8c8c;
+    }
+
+    .error {
+      text-align: center;
+      padding: 40px;
+      color: #ff4d4f;
+    }
+
+    .red {
+      color: #ff4d4f;
+    }
+
+    .green {
+      color: #52c41a;
+    }
+
+    .status-bar {
+      background: #1a1d2e;
+      padding: 12px 16px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #52c41a;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .refresh-btn {
+      background: #40a9ff;
+      color: white;
+      border: none;
+      padding: 6px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 0.2s;
+    }
+
+    .refresh-btn:hover {
+      background: #096dd9;
+    }
+
+    .refresh-btn:disabled {
+      background: #434343;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="status-bar">
+      <div class="status-indicator">
+        <div class="status-dot"></div>
+        <span id="status-text">正在连接...</span>
+      </div>
+      <button class="refresh-btn" onclick="refreshAll()">手动刷新</button>
+    </div>
+
+    <!-- 涨幅前20概念 -->
+    <div class="concept-table">
+      <div class="table-header">
+        <h3>📈 涨幅前20概念板块</h3>
+        <span class="update-time" id="update-time-top">-</span>
+      </div>
+      <div id="table-top"></div>
+    </div>
+
+    <!-- 自选热门概念 -->
+    <div class="concept-table">
+      <div class="table-header">
+        <h3>⭐ 自选热门概念</h3>
+        <span class="update-time" id="update-time-watch">-</span>
+      </div>
+      <div id="table-watch"></div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = 'http://localhost:5000';
+
+    // 格式化数字
+    function formatNumber(value, type) {
+      if (value === 0 || value === null || value === undefined) return '-';
+
+      switch (type) {
+        case 'percent':
+          return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
+        case 'money':
+          return `${value.toFixed(2)}亿`;
+        case 'volume':
+          return `${value.toFixed(2)}万`;
+        case 'ratio':
+          return value.toFixed(2);
+        default:
+          return value.toFixed(2);
+      }
+    }
+
+    // 获取颜色
+    function getColor(value) {
+      if (value > 0) return 'red';
+      if (value < 0) return 'green';
+      return '';
+    }
+
+    // 渲染表格
+    function renderTable(data, containerId, updateTimeId) {
+      const container = document.getElementById(containerId);
+
+      if (!data || data.length === 0) {
+        container.innerHTML = '<div class="loading">暂无数据</div>';
+        return;
+      }
+
+      let html = `
+        <table>
+          <thead>
+            <tr>
+              <th>排名</th>
+              <th>名称</th>
+              <th>涨幅%</th>
+              <th>涨速</th>
+              <th>主力净量</th>
+              <th>主力净流入</th>
+              <th>量比</th>
+              <th>涨家数</th>
+              <th>跌家数</th>
+              <th>涨停数</th>
+              <th>5日涨幅</th>
+              <th>10日涨幅</th>
+              <th>20日涨幅</th>
+              <th>总量</th>
+              <th>总金额</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      data.forEach(row => {
+        html += `
+          <tr>
+            <td class="center">${row.rank}</td>
+            <td class="name">${row.name}</td>
+            <td class="right ${getColor(row.changePct)}">${formatNumber(row.changePct, 'percent')}</td>
+            <td class="right ${getColor(row.changeValue)}">${formatNumber(row.changeValue, 'number')}</td>
+            <td class="right ${getColor(row.mainVolume)}">${formatNumber(row.mainVolume, 'number')}</td>
+            <td class="right ${getColor(row.moneyInflow)}">${formatNumber(row.moneyInflow, 'money')}</td>
+            <td class="right">${formatNumber(row.volumeRatio, 'ratio')}</td>
+            <td class="center red">${row.upCount}</td>
+            <td class="center green">${row.downCount}</td>
+            <td class="center red" style="font-weight: bold">${row.limitUp}</td>
+            <td class="right ${getColor(row.day5Change)}">${formatNumber(row.day5Change, 'percent')}</td>
+            <td class="right ${getColor(row.day10Change)}">${formatNumber(row.day10Change, 'percent')}</td>
+            <td class="right ${getColor(row.day20Change)}">${formatNumber(row.day20Change, 'percent')}</td>
+            <td class="right">${formatNumber(row.volume, 'volume')}</td>
+            <td class="right">${formatNumber(row.turnover, 'money')}</td>
+          </tr>
+        `;
+      });
+
+      html += `
+          </tbody>
+        </table>
+      `;
+
+      container.innerHTML = html;
+    }
+
+    // 获取数据
+    async function fetchData(type) {
+      try {
+        const url = type === 'top'
+          ? `${API_BASE}/api/concepts/top?n=20`
+          : `${API_BASE}/api/concepts/watch`;
+
+        const response = await fetch(url);
+        const result = await response.json();
+
+        if (result.success) {
+          const containerId = type === 'top' ? 'table-top' : 'table-watch';
+          const updateTimeId = type === 'top' ? 'update-time-top' : 'update-time-watch';
+
+          renderTable(result.data, containerId, updateTimeId);
+          document.getElementById(updateTimeId).textContent = `更新时间: ${result.timestamp}`;
+
+          // 更新状态
+          document.getElementById('status-text').textContent = '实时监控中';
+        }
+      } catch (error) {
+        console.error('获取数据失败:', error);
+        const containerId = type === 'top' ? 'table-top' : 'table-watch';
+        document.getElementById(containerId).innerHTML =
+          '<div class="error">❌ 连接失败，请确保API服务已启动</div>';
+
+        document.getElementById('status-text').textContent = '连接失败';
+      }
+    }
+
+    // 刷新所有数据
+    async function refreshAll() {
+      const btn = document.querySelector('.refresh-btn');
+      btn.disabled = true;
+      btn.textContent = '刷新中...';
+
+      await Promise.all([
+        fetchData('top'),
+        fetchData('watch')
+      ]);
+
+      btn.disabled = false;
+      btn.textContent = '手动刷新';
+    }
+
+    // 初始化
+    async function init() {
+      await refreshAll();
+
+      // 每2.5分钟自动刷新
+      setInterval(refreshAll, 150000);
+    }
+
+    // 页面加载完成后初始化
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>

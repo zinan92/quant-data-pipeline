@@ -1,0 +1,26 @@
+from fastapi import APIRouter
+
+from src.api import routes_candles, routes_meta, routes_tasks, routes_status, routes_boards, routes_watchlist, routes_realtime, routes_etf, routes_index, routes_tracks, routes_concepts, routes_evaluations, routes_klines, routes_admin, routes_screenshots, routes_simulated, routes_earnings, routes_sectors, routes_concept_monitor_v2, routes_tonghuashun
+
+api_router = APIRouter()
+
+api_router.include_router(routes_meta.router, prefix="/symbols", tags=["symbols"])
+api_router.include_router(routes_candles.router, prefix="/candles", tags=["candles"])
+api_router.include_router(routes_tasks.router, prefix="/tasks", tags=["tasks"])
+api_router.include_router(routes_status.router, prefix="/status", tags=["status"])
+api_router.include_router(routes_boards.router, prefix="/boards", tags=["boards"])
+api_router.include_router(routes_watchlist.router, prefix="/watchlist", tags=["watchlist"])
+api_router.include_router(routes_realtime.router, prefix="/realtime", tags=["realtime"])
+api_router.include_router(routes_etf.router, prefix="/etf", tags=["etf"])
+api_router.include_router(routes_index.router, prefix="/index", tags=["index"])
+api_router.include_router(routes_tracks.router, prefix="/tracks", tags=["tracks"])
+api_router.include_router(routes_concepts.router, prefix="/concepts", tags=["concepts"])
+api_router.include_router(routes_evaluations.router, prefix="/evaluations", tags=["evaluations"])
+api_router.include_router(routes_klines.router, prefix="/klines", tags=["klines"])
+api_router.include_router(routes_admin.router, prefix="/admin", tags=["admin"])
+api_router.include_router(routes_screenshots.router, prefix="/screenshots", tags=["screenshots"])
+api_router.include_router(routes_simulated.router, prefix="/simulated", tags=["simulated"])
+api_router.include_router(routes_earnings.router, prefix="/earnings", tags=["earnings"])
+api_router.include_router(routes_sectors.router, prefix="/sectors", tags=["sectors"])
+api_router.include_router(routes_concept_monitor_v2.router, prefix="/concept-monitor", tags=["concept-monitor"])
+api_router.include_router(routes_tonghuashun.router)
