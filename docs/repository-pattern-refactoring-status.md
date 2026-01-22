@@ -94,10 +94,10 @@
 
 ### 低优先级（模拟/测试服务）
 
-5. **SimulatedService** (`src/services/simulated_service.py` - 483行)
-   - 使用 `session_scope()` 4次
-   - 用途：模拟数据生成
-   - 可选重构
+5. ✅ **SimulatedService** (`src/services/simulated_service.py` - 533行)
+   - 使用 KlineRepository 和 SymbolRepository
+   - 支持工厂方法和向后兼容
+   - 提交: `fe76868` - refactor(simulated_service): 使用 Repository 模式和依赖注入
 
 ### 无需重构（非数据库会话）
 
@@ -186,26 +186,29 @@ class SomeService:
 - ✅ [#2 DataConsistencyValidator 重构](https://github.com/zinan92/ashare/issues/2) - 已完成
 - ✅ [#3 KlineScheduler 重构](https://github.com/zinan92/ashare/issues/3) - 已完成
 - ✅ [#4 ScreenshotService 重构](https://github.com/zinan92/ashare/issues/4) - 已完成
-
-**待完成的子任务**:
-- [#5 SimulatedService 重构](https://github.com/zinan92/ashare/issues/5) - 低优先级
+- ✅ [#5 SimulatedService 重构](https://github.com/zinan92/ashare/issues/5) - 已完成
 
 ## 总结
 
-✅ **已完成** (8/9 = 89%):
+✅ **已完成** (9/9 = 100%):
 - Repository 层架构完整搭建（4个仓储类）
-- 8个核心服务完成重构
+- 9个核心服务全部完成重构
   - KlineService, KlineUpdater
   - BoardMappingService, TushareBoardService
   - MarketDataService
   - DataConsistencyValidator
   - KlineScheduler
-  - ScreenshotService ✨ 最新完成
+  - ScreenshotService
+  - SimulatedService ✨ 最新完成
 - 完整的单元测试覆盖（50+ 测试用例）
 - 向后兼容设计
 
-⏳ **待完成** (1/9 = 11%):
-- 1个服务文件待重构（SimulatedService，约483行代码）
-- 低优先级，按需推进
+🎉 **Repository 模式重构已全部完成！**
+
+所有服务已成功迁移到 Repository 模式：
+- 移除了所有 `session_scope()` 和直接的 `SessionLocal()` 调用
+- 统一使用依赖注入模式
+- 保持了100%向后兼容性
+- 代码更易测试和维护
 
 当前重构已经建立了坚实的基础架构，后续服务可以按照统一模式逐步迁移。使用 GitHub Issues 可以更好地追踪进度和协作。
