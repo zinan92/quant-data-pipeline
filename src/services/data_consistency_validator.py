@@ -16,15 +16,28 @@ logger = logging.getLogger(__name__)
 class DataConsistencyValidator:
     """数据一致性验证器"""
 
-    def __init__(self, tolerance: float = 0.01):
+    def __init__(self, updater: KlineUpdater, tolerance: float = 0.01):
         """
         初始化验证器
 
         Args:
+            updater: KlineUpdater实例
             tolerance: 价格差异容忍度（百分比），默认0.01%
         """
         self.tolerance = tolerance
-        self.updater = KlineUpdater()
+        self.updater = updater
+
+    @classmethod
+    def create_with_session(cls, session, tolerance: float = 0.01) -> "DataConsistencyValidator":
+        """
+        工厂方法：使用session创建DataConsistencyValidator
+
+        Args:
+            session: SQLAlchemy session
+            tolerance: 价格差异容忍度（百分比），默认0.01%
+        """
+        updater = KlineUpdater.create_with_session(session)
+        return cls(updater, tolerance)
 
     async def validate_all(self) -> Dict[str, Any]:
         """

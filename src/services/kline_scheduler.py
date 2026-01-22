@@ -24,8 +24,10 @@ class KlineScheduler:
 
     def __init__(self):
         self.scheduler = AsyncIOScheduler()
-        self.updater = KlineUpdater()
-        self.validator = DataConsistencyValidator()
+        # 初始化时创建session和repositories
+        self.session = SessionLocal()
+        self.updater = KlineUpdater.create_with_session(self.session)
+        self.validator = DataConsistencyValidator.create_with_session(self.session)
         self._is_running = False
 
     def is_trading_day(self, date: datetime = None) -> bool:

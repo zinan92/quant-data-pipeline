@@ -917,25 +917,35 @@ class KlineUpdater:
 # 便捷函数
 async def run_daily_update():
     """执行每日更新任务"""
-    updater = KlineUpdater()
+    from src.database import SessionLocal
+    session = SessionLocal()
+    try:
+        updater = KlineUpdater.create_with_session(session)
 
-    # 并发更新指数日线和概念日线
-    await asyncio.gather(
-        updater.update_index_daily(),
-        updater.update_concept_daily(),
-    )
+        # 并发更新指数日线和概念日线
+        await asyncio.gather(
+            updater.update_index_daily(),
+            updater.update_concept_daily(),
+        )
 
-    logger.info("每日更新任务完成")
+        logger.info("每日更新任务完成")
+    finally:
+        session.close()
 
 
 async def run_30m_update():
     """执行30分钟更新任务"""
-    updater = KlineUpdater()
+    from src.database import SessionLocal
+    session = SessionLocal()
+    try:
+        updater = KlineUpdater.create_with_session(session)
 
-    # 并发更新指数和概念30分钟线
-    await asyncio.gather(
-        updater.update_index_30m(),
-        updater.update_concept_30m(),
-    )
+        # 并发更新指数和概念30分钟线
+        await asyncio.gather(
+            updater.update_index_30m(),
+            updater.update_concept_30m(),
+        )
 
-    logger.info("30分钟更新任务完成")
+        logger.info("30分钟更新任务完成")
+    finally:
+        session.close()

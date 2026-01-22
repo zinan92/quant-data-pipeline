@@ -146,8 +146,13 @@ async def add_to_watchlist(request: WatchlistAdd):
         symbol_name = symbol.name
 
     # 立即更新该股票的K线数据 (在session_scope外执行，避免长事务)
-    updater = KlineUpdater()
-    kline_result = await updater.update_single_stock_klines(request.ticker)
+    from src.database import SessionLocal
+    update_session = SessionLocal()
+    try:
+        updater = KlineUpdater.create_with_session(update_session)
+        kline_result = await updater.update_single_stock_klines(request.ticker)
+    finally:
+        update_session.close()
 
     return {
         "message": f"成功添加 {symbol_name} 到自选",
