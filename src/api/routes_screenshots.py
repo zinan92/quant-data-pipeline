@@ -10,6 +10,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.api.dependencies import get_db
+from src.schemas import (
+    ScreenshotGenerateResponse,
+    ScreenshotListResponse,
+    LatestScreenshotResponse,
+    SingleScreenshotResponse,
+)
 from src.services.screenshot_service import ScreenshotService
 from src.utils.logging import get_logger
 
@@ -28,8 +34,8 @@ class GenerateRequest(BaseModel):
     include_macd: bool = Field(default=True, description="是否包含MACD")
 
 
-@router.post("/generate")
-async def generate_screenshots(request: GenerateRequest):
+@router.post("/generate", response_model=ScreenshotGenerateResponse)
+async def generate_screenshots(request: GenerateRequest) -> ScreenshotGenerateResponse:
     """
     批量生成K线截图
 
@@ -50,7 +56,7 @@ async def generate_screenshots(request: GenerateRequest):
         if not result.get("success"):
             raise HTTPException(status_code=400, detail=result.get("error", "生成失败"))
 
-        return result
+        return ScreenshotGenerateResponse(**result)
 
     except HTTPException:
         raise
@@ -59,11 +65,11 @@ async def generate_screenshots(request: GenerateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/list")
+@router.get("/list", response_model=ScreenshotListResponse)
 async def list_screenshots(
     date: Optional[str] = None,
     timeframe: Optional[str] = None,
-):
+) -> ScreenshotListResponse:
     """
     获取截图列表
 
@@ -73,42 +79,42 @@ async def list_screenshots(
     try:
         service = ScreenshotService()
         result = service.list_screenshots(date_str=date, timeframe=timeframe)
-        return result
+        return ScreenshotListResponse(**result)
 
     except Exception as e:
         logger.exception("获取截图列表失败")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/latest")
-async def get_latest_screenshots():
+@router.get("/latest", response_model=LatestScreenshotResponse)
+async def get_latest_screenshots() -> LatestScreenshotResponse:
     """获取最新的截图目录信息"""
     try:
         service = ScreenshotService()
         result = service.get_latest_directory()
 
         if result is None:
-            return {
-                "date": None,
-                "directory": None,
-                "count": 0,
-                "message": "暂无截图"
-            }
+            return LatestScreenshotResponse(
+                date=None,
+                directory=None,
+                count=0,
+                message="暂无截图"
+            )
 
-        return result
+        return LatestScreenshotResponse(**result)
 
     except Exception as e:
         logger.exception("获取最新截图目录失败")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/generate/single/{ticker}")
+@router.post("/generate/single/{ticker}", response_model=SingleScreenshotResponse)
 async def generate_single_screenshot(
     ticker: str,
     timeframe: str = "day",
     limit: int = 120,
     db: Session = Depends(get_db),
-):
+) -> SingleScreenshotResponse:
     """
     生成单只股票的截图
 
@@ -137,13 +143,13 @@ async def generate_single_screenshot(
         if filepath is None:
             raise HTTPException(status_code=500, detail=f"生成截图失败，可能没有K线数据")
 
-        return {
-            "success": True,
-            "ticker": ticker,
-            "name": name,
-            "timeframe": timeframe,
-            "filepath": filepath,
-        }
+        return SingleScreenshotResponse(
+            success=True,
+            ticker=ticker,
+            name=name,
+            timeframe=timeframe,
+            filepath=filepath,
+        )
 
     except HTTPException:
         raise

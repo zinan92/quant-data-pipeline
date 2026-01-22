@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from src.api.dependencies import get_db
 from src.models import DataUpdateLog, DataUpdateStatus, Kline, KlineTimeframe, SymbolType
+from src.schemas import SchedulerJobsResponse, TradingStatusResponse
 from src.services.kline_scheduler import get_scheduler
 from src.utils.logging import get_logger
 
@@ -98,18 +99,18 @@ def get_update_status(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/scheduler/jobs")
-def get_scheduler_jobs() -> Dict[str, Any]:
+@router.get("/scheduler/jobs", response_model=SchedulerJobsResponse)
+def get_scheduler_jobs() -> SchedulerJobsResponse:
     """获取调度任务列表"""
     try:
         scheduler = get_scheduler()
         jobs = scheduler.get_jobs()
 
-        return {
-            "is_running": scheduler._is_running,
-            "jobs": jobs,
-            "current_time": datetime.now().isoformat(),
-        }
+        return SchedulerJobsResponse(
+            jobs=jobs,
+            count=len(jobs),
+            is_running=scheduler._is_running,
+        )
     except Exception as e:
         logger.exception("获取调度任务失败")
         raise HTTPException(status_code=500, detail=str(e))
@@ -269,8 +270,8 @@ def get_kline_summary(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/trading-status")
-def get_trading_status() -> Dict[str, Any]:
+@router.get("/trading-status", response_model=TradingStatusResponse)
+def get_trading_status() -> TradingStatusResponse:
     """获取当前交易状态"""
     scheduler = get_scheduler()
 
@@ -278,15 +279,12 @@ def get_trading_status() -> Dict[str, Any]:
     is_trading_day = scheduler.is_trading_day(now)
     is_trading_time = scheduler.is_trading_time(now)
 
-    return {
-        "current_time": now.isoformat(),
-        "is_trading_day": is_trading_day,
-        "is_trading_time": is_trading_time,
-        "day_of_week": now.strftime("%A"),
-        "market_status": (
-            "交易中" if is_trading_time else ("休市" if is_trading_day else "非交易日")
-        ),
-    }
+    return TradingStatusResponse(
+        is_trading_day=is_trading_day,
+        is_trading_time=is_trading_time,
+        current_time=now.isoformat(),
+        latest_trade_date=None,  # TODO: 从数据库获取
+    )
 
 
 @router.get("/data-freshness")

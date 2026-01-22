@@ -23,6 +23,27 @@ from src.schemas.normalized import (
     ticker_to_tushare,
 )
 
+# API响应模型 (api.py)
+from src.schemas.api import (
+    ErrorResponse,
+    SuccessResponse,
+    KlineData,
+    KlineResponse,
+    ScreenshotFileInfo,
+    ScreenshotListResponse,
+    ScreenshotGenerateResponse,
+    SingleScreenshotResponse,
+    LatestScreenshotResponse,
+    SuperCategoryItem,
+    SuperCategoriesResponse,
+    BoardStockItem,
+    BoardStatsResponse,
+    SchedulerJobInfo,
+    SchedulerJobsResponse,
+    TradingStatusResponse,
+    IndexQuoteResponse,
+)
+
 __all__ = [
     # Base schemas
     "CandleBatchResponse",
@@ -39,4 +60,22 @@ __all__ = [
     "normalize_ticker",
     "ticker_to_sina",
     "ticker_to_tushare",
+    # API response schemas
+    "ErrorResponse",
+    "SuccessResponse",
+    "KlineData",
+    "KlineResponse",
+    "ScreenshotFileInfo",
+    "ScreenshotListResponse",
+    "ScreenshotGenerateResponse",
+    "SingleScreenshotResponse",
+    "LatestScreenshotResponse",
+    "SuperCategoryItem",
+    "SuperCategoriesResponse",
+    "BoardStockItem",
+    "BoardStatsResponse",
+    "SchedulerJobInfo",
+    "SchedulerJobsResponse",
+    "TradingStatusResponse",
+    "IndexQuoteResponse",
 ]
