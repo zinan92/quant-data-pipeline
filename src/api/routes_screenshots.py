@@ -5,9 +5,11 @@ K线截图API路由
 
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
+from src.api.dependencies import get_db
 from src.services.screenshot_service import ScreenshotService
 from src.utils.logging import get_logger
 
@@ -105,6 +107,7 @@ async def generate_single_screenshot(
     ticker: str,
     timeframe: str = "day",
     limit: int = 120,
+    db: Session = Depends(get_db),
 ):
     """
     生成单只股票的截图
@@ -114,18 +117,13 @@ async def generate_single_screenshot(
     - limit: K线数量
     """
     try:
-        from src.database import SessionLocal
         from src.models import SymbolMetadata
 
         # 获取股票名称
-        session = SessionLocal()
-        try:
-            meta = session.query(SymbolMetadata).filter(SymbolMetadata.ticker == ticker).first()
-            if not meta:
-                raise HTTPException(status_code=404, detail=f"股票 {ticker} 不存在")
-            name = meta.name or ticker
-        finally:
-            session.close()
+        meta = db.query(SymbolMetadata).filter(SymbolMetadata.ticker == ticker).first()
+        if not meta:
+            raise HTTPException(status_code=404, detail=f"股票 {ticker} 不存在")
+        name = meta.name or ticker
 
         # 生成截图
         service = ScreenshotService()

@@ -5,11 +5,13 @@
 
 import pandas as pd
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 from typing import List, Optional
 from functools import lru_cache
 
+from src.api.dependencies import get_db
 from src.models import KlineTimeframe, SymbolType
 from src.schemas.normalized import NormalizedTicker
 from src.services.kline_service import KlineService
@@ -58,17 +60,15 @@ class ConceptListResponse(BaseModel):
     total: int
 
 
-def get_concept_change_pcts() -> dict:
+def get_concept_change_pcts(db: Session) -> dict:
     """获取所有概念板块的涨跌幅 (从 klines 表)"""
     from sqlalchemy import and_, distinct
-    from src.database import SessionLocal
     from src.models import Kline
 
     change_map = {}
-    session = SessionLocal()
     try:
         # 获取所有概念代码
-        codes = session.query(distinct(Kline.symbol_code)).filter(
+        codes = db.query(distinct(Kline.symbol_code)).filter(
             and_(
                 Kline.symbol_type == SymbolType.CONCEPT,
                 Kline.timeframe == KlineTimeframe.DAY,
@@ -77,7 +77,7 @@ def get_concept_change_pcts() -> dict:
 
         for (code,) in codes:
             # 获取最近两条日线
-            klines = session.query(Kline).filter(
+            klines = db.query(Kline).filter(
                 and_(
                     Kline.symbol_type == SymbolType.CONCEPT,
                     Kline.symbol_code == code,
@@ -91,8 +91,9 @@ def get_concept_change_pcts() -> dict:
                 if prev_close > 0:
                     change_pct = ((last_close - prev_close) / prev_close) * 100
                     change_map[str(code)] = round(change_pct, 2)
-    finally:
-        session.close()
+    except Exception as e:
+        logger.exception("获取概念涨跌幅失败")
+        raise
 
     return change_map
 
@@ -114,11 +115,13 @@ class ConceptKlineResponse(BaseModel):
 
 
 @router.get("", response_model=ConceptListResponse)
-def list_concepts():
+def list_concepts(
+    db: Session = Depends(get_db),
+):
     """获取所有热门概念板块列表"""
     hot_df = load_hot_concepts()
     mapping = load_concept_mapping()
-    change_map = get_concept_change_pcts()
+    change_map = get_concept_change_pcts(db)
 
     concepts = []
     for _, row in hot_df.iterrows():
@@ -276,7 +279,8 @@ def _format_concept_datetime(dt_str: str, is_daily: bool) -> str:
 def get_concept_kline(
     code: str,
     period: str = Query("30min", regex="^(30min|daily)$"),
-    limit: int = Query(120, ge=1, le=500)
+    limit: int = Query(120, ge=1, le=500),
+    db: Session = Depends(get_db),
 ):
     """获取概念板块K线数据 (从 klines 表)"""
     # 转换 period 到 timeframe
@@ -284,40 +288,35 @@ def get_concept_kline(
     is_daily = period == "daily"
 
     try:
-        from src.database import SessionLocal
-        session = SessionLocal()
-        try:
-            service = KlineService.create_with_session(session)
-            result = service.get_klines_with_meta(
-                symbol_type=SymbolType.CONCEPT,
-                symbol_code=code,
-                timeframe=timeframe,
-                limit=limit,
-            )
-        finally:
-            session.close()
+        service = KlineService.create_with_session(db)
+        result = service.get_klines_with_meta(
+            symbol_type=SymbolType.CONCEPT,
+            symbol_code=code,
+            timeframe=timeframe,
+            limit=limit,
+        )
 
-            if not result["klines"]:
-                raise HTTPException(status_code=404, detail=f"概念 {code} K线数据不存在")
+        if not result["klines"]:
+            raise HTTPException(status_code=404, detail=f"概念 {code} K线数据不存在")
 
-            # 转换为前端期望的格式
-            klines = []
-            for k in result["klines"]:
-                klines.append({
-                    'datetime': _format_concept_datetime(k['datetime'], is_daily),
-                    'open': k['open'],
-                    'high': k['high'],
-                    'low': k['low'],
-                    'close': k['close'],
-                    'volume': int(k['volume']),
-                    'amount': k['amount']
-                })
+        # 转换为前端期望的格式
+        klines = []
+        for k in result["klines"]:
+            klines.append({
+                'datetime': _format_concept_datetime(k['datetime'], is_daily),
+                'open': k['open'],
+                'high': k['high'],
+                'low': k['low'],
+                'close': k['close'],
+                'volume': int(k['volume']),
+                'amount': k['amount']
+            })
 
-            return {
-                'code': code,
-                'name': result["symbol_name"],
-                'klines': klines
-            }
+        return {
+            'code': code,
+            'name': result["symbol_name"],
+            'klines': klines
+        }
 
     except HTTPException:
         raise

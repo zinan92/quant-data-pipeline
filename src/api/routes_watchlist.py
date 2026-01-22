@@ -5,7 +5,9 @@ Watchlist API routes - 自选股管理
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
+from src.api.dependencies import get_db
 from src.database import session_scope
 from src.models import Watchlist, SymbolMetadata
 from src.schemas import SymbolMeta
@@ -93,16 +95,19 @@ def get_watchlist():
 
 
 @router.post("", status_code=201)
-async def add_to_watchlist(request: WatchlistAdd):
+async def add_to_watchlist(
+    request: WatchlistAdd,
+    db: Session = Depends(get_db),
+):
     """添加股票到自选，并立即更新K线数据"""
     from datetime import datetime
     from src.models import Kline, KlineTimeframe, SymbolType
     from sqlalchemy import desc
     from src.services.kline_updater import KlineUpdater
 
-    with session_scope() as session:
+    try:
         # 检查股票是否存在
-        symbol = session.query(SymbolMetadata).filter(
+        symbol = db.query(SymbolMetadata).filter(
             SymbolMetadata.ticker == request.ticker
         ).first()
 
@@ -110,7 +115,7 @@ async def add_to_watchlist(request: WatchlistAdd):
             raise HTTPException(status_code=404, detail="股票不存在")
 
         # 检查是否已经在自选中
-        existing = session.query(Watchlist).filter(
+        existing = db.query(Watchlist).filter(
             Watchlist.ticker == request.ticker
         ).first()
 
@@ -118,7 +123,7 @@ async def add_to_watchlist(request: WatchlistAdd):
             raise HTTPException(status_code=400, detail="已在自选列表中")
 
         # 获取最新收盘价作为买入价格（从 klines 表查询）
-        latest_kline = session.query(Kline).filter(
+        latest_kline = db.query(Kline).filter(
             Kline.symbol_code == request.ticker,
             Kline.symbol_type == SymbolType.STOCK,
             Kline.timeframe == KlineTimeframe.DAY
@@ -140,26 +145,27 @@ async def add_to_watchlist(request: WatchlistAdd):
             purchase_date=purchase_date,
             shares=shares
         )
-        session.add(watchlist_item)
-        # session_scope 会自动 commit
+        db.add(watchlist_item)
+        db.commit()
 
         symbol_name = symbol.name
 
-    # 立即更新该股票的K线数据 (在session_scope外执行，避免长事务)
-    from src.database import SessionLocal
-    update_session = SessionLocal()
-    try:
-        updater = KlineUpdater.create_with_session(update_session)
+        # 立即更新该股票的K线数据 (使用同一个session)
+        updater = KlineUpdater.create_with_session(db)
         kline_result = await updater.update_single_stock_klines(request.ticker)
-    finally:
-        update_session.close()
 
-    return {
-        "message": f"成功添加 {symbol_name} 到自选",
-        "purchase_price": purchase_price,
-        "shares": shares,
-        "kline_updated": kline_result
-    }
+        return {
+            "message": f"成功添加 {symbol_name} 到自选",
+            "purchase_price": purchase_price,
+            "shares": shares,
+            "kline_updated": kline_result
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("")

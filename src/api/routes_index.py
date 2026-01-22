@@ -8,8 +8,10 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
 
+from src.api.dependencies import get_db
 from src.config import get_settings
 from src.models import KlineTimeframe, SymbolType
 from src.services.kline_service import KlineService
@@ -35,7 +37,8 @@ def get_tushare_client() -> TushareClient:
 @router.get("/kline/{ts_code}")
 def get_index_kline(
     ts_code: str = "000001.SH",
-    limit: int = Query(default=120, ge=10, le=500, description="K线数量")
+    limit: int = Query(default=120, ge=10, le=500, description="K线数量"),
+    db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     """
     获取指数日线K线数据 (从 klines 表)
@@ -48,18 +51,13 @@ def get_index_kline(
         包含K线、成交量、MACD的数据
     """
     try:
-        from src.database import SessionLocal
-        session = SessionLocal()
-        try:
-            service = KlineService.create_with_session(session)
-            result = service.get_klines_with_meta(
-                symbol_type=SymbolType.INDEX,
-                symbol_code=ts_code,
-                timeframe=KlineTimeframe.DAY,
-                limit=limit,
-            )
-        finally:
-            session.close()
+        service = KlineService.create_with_session(db)
+        result = service.get_klines_with_meta(
+            symbol_type=SymbolType.INDEX,
+            symbol_code=ts_code,
+            timeframe=KlineTimeframe.DAY,
+            limit=limit,
+        )
 
         if not result["klines"]:
             raise HTTPException(status_code=404, detail=f"未找到指数数据: {ts_code}")
@@ -325,7 +323,8 @@ async def get_index_realtime(ts_code: str = "000001.SH"):
 @router.get("/kline30m/{ts_code}")
 def get_index_kline_30m(
     ts_code: str = "000001.SH",
-    limit: int = Query(default=120, ge=10, le=500, description="K线数量")
+    limit: int = Query(default=120, ge=10, le=500, description="K线数量"),
+    db: Session = Depends(get_db),
 ):
     """
     获取指数30分钟K线数据 (从 klines 表)
@@ -338,18 +337,13 @@ def get_index_kline_30m(
         30分钟K线数据，包含MACD指标
     """
     try:
-        from src.database import SessionLocal
-        session = SessionLocal()
-        try:
-            service = KlineService.create_with_session(session)
-            result = service.get_klines_with_meta(
-                symbol_type=SymbolType.INDEX,
-                symbol_code=ts_code,
-                timeframe=KlineTimeframe.MINS_30,
-                limit=limit,
-            )
-        finally:
-            session.close()
+        service = KlineService.create_with_session(db)
+        result = service.get_klines_with_meta(
+            symbol_type=SymbolType.INDEX,
+            symbol_code=ts_code,
+            timeframe=KlineTimeframe.MINS_30,
+            limit=limit,
+        )
 
         if not result["klines"]:
             raise HTTPException(status_code=404, detail=f"未找到指数30分钟K线: {ts_code}")
