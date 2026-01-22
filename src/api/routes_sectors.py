@@ -2,11 +2,16 @@
 股票赛道分类API
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from src.database import SessionLocal
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 from typing import Optional
+
+from src.api.dependencies import get_db
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -61,18 +66,19 @@ def get_traded_hours():
 
 
 @router.get("/turnover", response_model=SectorTurnoverResponse)
-async def get_sector_turnover():
+async def get_sector_turnover(
+    db: Session = Depends(get_db),
+):
     """
     获取各赛道的成交额统计
 
     返回每个赛道今日和昨日的总成交额，以及变化比例
     今日成交额按比例折算：今日实际成交额 vs 昨日全天成交额 × (已交易时间 / 4小时)
     """
-    session = SessionLocal()
     try:
         # 1. 获取最近两个有足够成交量数据的交易日
         # 需要有超过100只股票有成交量数据才算有效
-        trade_dates = session.execute(
+        trade_dates = db.execute(
             text("""
                 SELECT trade_time, COUNT(*) as cnt
                 FROM klines
@@ -95,7 +101,7 @@ async def get_sector_turnover():
         time_ratio = traded_hours / 4.0 if traded_hours > 0 else 1.0
 
         # 2. 获取所有赛道分类
-        sectors_result = session.execute(
+        sectors_result = db.execute(
             text("SELECT ticker, sector FROM stock_sectors")
         ).fetchall()
 
@@ -107,7 +113,7 @@ async def get_sector_turnover():
 
         # 3. 查询今日和昨日的成交量和收盘价数据
         # 成交额 = volume * close * 100 (volume是手数，每手100股)
-        volume_result = session.execute(
+        volume_result = db.execute(
             text("""
                 SELECT symbol_code, trade_time, volume, close
                 FROM klines
@@ -182,8 +188,9 @@ async def get_sector_turnover():
             today_date=today_date,
             yesterday_date=yesterday_date,
         )
-    finally:
-        session.close()
+    except Exception as e:
+        logger.exception("获取赛道成交额失败")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 class SectorUpdateRequest(BaseModel):
@@ -204,44 +211,47 @@ class SectorCreateResponse(BaseModel):
 
 
 @router.get("/list/available", response_model=SectorListResponse)
-async def get_available_sectors():
+async def get_available_sectors(
+    db: Session = Depends(get_db),
+):
     """获取所有可用赛道列表（从数据库读取）"""
-    session = SessionLocal()
     try:
-        result = session.execute(
+        result = db.execute(
             text("SELECT name FROM available_sectors ORDER BY display_order")
         ).fetchall()
         sectors = [row[0] for row in result]
         return SectorListResponse(sectors=sectors)
-    finally:
-        session.close()
+    except Exception as e:
+        logger.exception("获取可用赛道列表失败")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/list/available", response_model=SectorCreateResponse)
-async def create_sector(request: SectorCreateRequest):
+async def create_sector(
+    request: SectorCreateRequest,
+    db: Session = Depends(get_db),
+):
     """创建新的赛道分类"""
-    session = SessionLocal()
     try:
         from datetime import datetime
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
         # 检查是否已存在
-        existing = session.execute(
+        existing = db.execute(
             text("SELECT name FROM available_sectors WHERE name = :name"),
             {"name": request.name}
         ).fetchone()
 
         if existing:
-            from fastapi import HTTPException
             raise HTTPException(status_code=400, detail=f"赛道 '{request.name}' 已存在")
 
         # 获取最大display_order
-        max_order = session.execute(
+        max_order = db.execute(
             text("SELECT MAX(display_order) FROM available_sectors")
         ).fetchone()[0] or 0
 
         # 插入新赛道
-        session.execute(
+        db.execute(
             text("""
                 INSERT INTO available_sectors (name, display_order, created_at)
                 VALUES (:name, :order, :created_at)
@@ -249,60 +259,65 @@ async def create_sector(request: SectorCreateRequest):
             {"name": request.name, "order": max_order + 1, "created_at": now}
         )
 
-        session.commit()
+        db.commit()
         return SectorCreateResponse(
             name=request.name,
             message=f"成功创建赛道 '{request.name}'"
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        session.rollback()
-        from fastapi import HTTPException
-        if "HTTPException" in str(type(e)):
-            raise e
+        db.rollback()
+        logger.exception("创建赛道失败")
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        session.close()
 
 
 @router.put("/{ticker}", response_model=SectorResponse)
-async def update_sector(ticker: str, request: SectorUpdateRequest):
+async def update_sector(
+    ticker: str,
+    request: SectorUpdateRequest,
+    db: Session = Depends(get_db),
+):
     """更新单个股票的赛道分类"""
-    session = SessionLocal()
     try:
         from datetime import datetime
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
         # 检查是否已存在
-        existing = session.execute(
+        existing = db.execute(
             text("SELECT ticker FROM stock_sectors WHERE ticker = :ticker"),
             {"ticker": ticker}
         ).fetchone()
 
         if existing:
             # 更新
-            session.execute(
+            db.execute(
                 text("UPDATE stock_sectors SET sector = :sector, updated_at = :now WHERE ticker = :ticker"),
                 {"ticker": ticker, "sector": request.sector, "now": now}
             )
         else:
             # 插入
-            session.execute(
+            db.execute(
                 text("INSERT INTO stock_sectors (ticker, sector, created_at, updated_at) VALUES (:ticker, :sector, :now, :now)"),
                 {"ticker": ticker, "sector": request.sector, "now": now}
             )
 
-        session.commit()
+        db.commit()
         return SectorResponse(ticker=ticker, sector=request.sector)
-    finally:
-        session.close()
+    except Exception as e:
+        db.rollback()
+        logger.exception(f"更新赛道分类失败: {ticker}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/{ticker}", response_model=SectorResponse)
-async def get_sector(ticker: str):
+async def get_sector(
+    ticker: str,
+    db: Session = Depends(get_db),
+):
     """获取单个股票的赛道分类"""
-    session = SessionLocal()
     try:
-        result = session.execute(
+        result = db.execute(
             text("SELECT sector FROM stock_sectors WHERE ticker = :ticker"),
             {"ticker": ticker}
         ).fetchone()
@@ -311,14 +326,17 @@ async def get_sector(ticker: str):
             ticker=ticker,
             sector=result[0] if result else None
         )
-    finally:
-        session.close()
+    except Exception as e:
+        logger.exception(f"获取赛道分类失败: {ticker}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/batch", response_model=SectorBatchResponse)
-async def get_sectors_batch(tickers: list[str]):
+async def get_sectors_batch(
+    tickers: list[str],
+    db: Session = Depends(get_db),
+):
     """批量获取股票的赛道分类"""
-    session = SessionLocal()
     try:
         if not tickers:
             return SectorBatchResponse(sectors={})
@@ -327,27 +345,30 @@ async def get_sectors_batch(tickers: list[str]):
         placeholders = ",".join([f":t{i}" for i in range(len(tickers))])
         params = {f"t{i}": t for i, t in enumerate(tickers)}
 
-        result = session.execute(
+        result = db.execute(
             text(f"SELECT ticker, sector FROM stock_sectors WHERE ticker IN ({placeholders})"),
             params
         ).fetchall()
 
         sectors = {row[0]: row[1] for row in result}
         return SectorBatchResponse(sectors=sectors)
-    finally:
-        session.close()
+    except Exception as e:
+        logger.exception("批量获取赛道分类失败")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/", response_model=SectorBatchResponse)
-async def get_all_sectors():
+async def get_all_sectors(
+    db: Session = Depends(get_db),
+):
     """获取所有股票的赛道分类"""
-    session = SessionLocal()
     try:
-        result = session.execute(
+        result = db.execute(
             text("SELECT ticker, sector FROM stock_sectors")
         ).fetchall()
 
         sectors = {row[0]: row[1] for row in result}
         return SectorBatchResponse(sectors=sectors)
-    finally:
-        session.close()
+    except Exception as e:
+        logger.exception("获取所有赛道分类失败")
+        raise HTTPException(status_code=500, detail=str(e))
