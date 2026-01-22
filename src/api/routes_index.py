@@ -7,7 +7,6 @@
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-import numpy as np
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 
@@ -15,60 +14,11 @@ from src.config import get_settings
 from src.models import KlineTimeframe, SymbolType
 from src.services.kline_service import KlineService
 from src.services.tushare_client import TushareClient
+from src.utils.indicators import calculate_macd
 from src.utils.logging import get_logger
 
 router = APIRouter()
 logger = get_logger(__name__)
-
-
-def calculate_macd(
-    close_prices: List[float],
-    fast_period: int = 12,
-    slow_period: int = 26,
-    signal_period: int = 9
-) -> Dict[str, List[Optional[float]]]:
-    """
-    计算MACD指标
-
-    Args:
-        close_prices: 收盘价列表
-        fast_period: 快线周期，默认12
-        slow_period: 慢线周期，默认26
-        signal_period: 信号线周期，默认9
-
-    Returns:
-        包含 dif, dea, macd(柱状图) 的字典
-    """
-    closes = np.array(close_prices, dtype=float)
-    n = len(closes)
-
-    # 计算EMA
-    def ema(data: np.ndarray, period: int) -> np.ndarray:
-        result = np.zeros(len(data))
-        multiplier = 2 / (period + 1)
-        result[0] = data[0]
-        for i in range(1, len(data)):
-            result[i] = (data[i] - result[i-1]) * multiplier + result[i-1]
-        return result
-
-    ema_fast = ema(closes, fast_period)
-    ema_slow = ema(closes, slow_period)
-
-    # DIF = 快线EMA - 慢线EMA
-    dif = ema_fast - ema_slow
-
-    # DEA = DIF的EMA (信号线)
-    dea = ema(dif, signal_period)
-
-    # MACD柱状图 = (DIF - DEA) * 2
-    macd_bar = (dif - dea) * 2
-
-    # 转换为列表，保留2位小数
-    return {
-        "dif": [round(v, 2) for v in dif.tolist()],
-        "dea": [round(v, 2) for v in dea.tolist()],
-        "macd": [round(v, 2) for v in macd_bar.tolist()]
-    }
 
 
 def get_tushare_client() -> TushareClient:

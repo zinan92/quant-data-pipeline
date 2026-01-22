@@ -11,7 +11,8 @@ from datetime import datetime
 from src.models import Kline, KlineTimeframe, SymbolType
 from src.repositories.kline_repository import KlineRepository
 from src.repositories.symbol_repository import SymbolRepository
-from src.services.kline_service import KlineService, calculate_macd
+from src.services.kline_service import KlineService
+from src.utils.indicators import calculate_macd
 
 
 class TestCalculateMacd:

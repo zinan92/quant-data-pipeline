@@ -8,65 +8,16 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-import numpy as np
 from sqlalchemy.orm import Session
 
 from src.models import KlineTimeframe, SymbolType
 from src.repositories.kline_repository import KlineRepository
 from src.repositories.symbol_repository import SymbolRepository
 from src.schemas.normalized import NormalizedDate, NormalizedTicker
+from src.utils.indicators import calculate_macd
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
-
-
-def calculate_macd(
-    close_prices: list[float],
-    fast_period: int = 12,
-    slow_period: int = 26,
-    signal_period: int = 9,
-) -> dict[str, list[float | None]]:
-    """
-    计算MACD指标
-
-    Args:
-        close_prices: 收盘价列表
-        fast_period: 快线周期
-        slow_period: 慢线周期
-        signal_period: 信号线周期
-
-    Returns:
-        包含dif, dea, macd的字典
-    """
-    if len(close_prices) < slow_period:
-        return {
-            "dif": [None] * len(close_prices),
-            "dea": [None] * len(close_prices),
-            "macd": [None] * len(close_prices),
-        }
-
-    closes = np.array(close_prices, dtype=float)
-
-    def ema(data: np.ndarray, period: int) -> np.ndarray:
-        """计算指数移动平均"""
-        result = np.zeros(len(data))
-        multiplier = 2 / (period + 1)
-        result[0] = data[0]
-        for i in range(1, len(data)):
-            result[i] = (data[i] - result[i - 1]) * multiplier + result[i - 1]
-        return result
-
-    ema_fast = ema(closes, fast_period)
-    ema_slow = ema(closes, slow_period)
-    dif = ema_fast - ema_slow
-    dea = ema(dif, signal_period)
-    macd_bar = (dif - dea) * 2
-
-    return {
-        "dif": [round(v, 4) for v in dif.tolist()],
-        "dea": [round(v, 4) for v in dea.tolist()],
-        "macd": [round(v, 4) for v in macd_bar.tolist()],
-    }
 
 
 class KlineService:
