@@ -111,59 +111,59 @@ def get_index_kline(
         finally:
             session.close()
 
-            if not result["klines"]:
-                raise HTTPException(status_code=404, detail=f"未找到指数数据: {ts_code}")
+        if not result["klines"]:
+            raise HTTPException(status_code=404, detail=f"未找到指数数据: {ts_code}")
 
-            klines = []
-            for k in result["klines"]:
-                # 转换日期格式: "2025-01-02 00:00:00" -> "20250102"
-                dt_str = k["datetime"]
-                if " " in dt_str:
-                    dt_str = dt_str.split(" ")[0].replace("-", "")
-                else:
-                    dt_str = dt_str.replace("-", "")
-
-                klines.append({
-                    "date": dt_str,
-                    "open": k["open"],
-                    "high": k["high"],
-                    "low": k["low"],
-                    "close": k["close"],
-                    "volume": k["volume"],
-                    "amount": k["amount"],
-                    "dif": k.get("dif"),
-                    "dea": k.get("dea"),
-                    "macd": k.get("macd"),
-                })
-
-            # 获取最新一条数据的基本信息
-            latest = klines[-1] if klines else None
-            prev = klines[-2] if len(klines) > 1 else latest
-
-            if latest and prev:
-                change = latest["close"] - prev["close"]
-                change_pct = (change / prev["close"]) * 100 if prev["close"] > 0 else 0
+        klines = []
+        for k in result["klines"]:
+            # 转换日期格式: "2025-01-02 00:00:00" -> "20250102"
+            dt_str = k["datetime"]
+            if " " in dt_str:
+                dt_str = dt_str.split(" ")[0].replace("-", "")
             else:
-                change = 0
-                change_pct = 0
+                dt_str = dt_str.replace("-", "")
 
-            return {
-                "ts_code": ts_code,
-                "name": result["symbol_name"] or get_index_name(ts_code),
-                "count": len(klines),
-                "latest": {
-                    "date": latest["date"] if latest else "",
-                    "close": latest["close"] if latest else 0,
-                    "open": latest["open"] if latest else 0,
-                    "high": latest["high"] if latest else 0,
-                    "low": latest["low"] if latest else 0,
-                    "change": round(change, 2),
-                    "change_pct": round(change_pct, 2),
-                    "volume": latest["volume"] if latest else 0,
-                    "amount": latest["amount"] if latest else 0,
-                } if latest else {},
-                "klines": klines
-            }
+            klines.append({
+                "date": dt_str,
+                "open": k["open"],
+                "high": k["high"],
+                "low": k["low"],
+                "close": k["close"],
+                "volume": k["volume"],
+                "amount": k["amount"],
+                "dif": k.get("dif"),
+                "dea": k.get("dea"),
+                "macd": k.get("macd"),
+            })
+
+        # 获取最新一条数据的基本信息
+        latest = klines[-1] if klines else None
+        prev = klines[-2] if len(klines) > 1 else latest
+
+        if latest and prev:
+            change = latest["close"] - prev["close"]
+            change_pct = (change / prev["close"]) * 100 if prev["close"] > 0 else 0
+        else:
+            change = 0
+            change_pct = 0
+
+        return {
+            "ts_code": ts_code,
+            "name": result["symbol_name"] or get_index_name(ts_code),
+            "count": len(klines),
+            "latest": {
+                "date": latest["date"] if latest else "",
+                "close": latest["close"] if latest else 0,
+                "open": latest["open"] if latest else 0,
+                "high": latest["high"] if latest else 0,
+                "low": latest["low"] if latest else 0,
+                "change": round(change, 2),
+                "change_pct": round(change_pct, 2),
+                "volume": latest["volume"] if latest else 0,
+                "amount": latest["amount"] if latest else 0,
+            } if latest else {},
+            "klines": klines
+        }
 
     except HTTPException:
         raise
@@ -401,38 +401,38 @@ def get_index_kline_30m(
         finally:
             session.close()
 
-            if not result["klines"]:
-                raise HTTPException(status_code=404, detail=f"未找到指数30分钟K线: {ts_code}")
+        if not result["klines"]:
+            raise HTTPException(status_code=404, detail=f"未找到指数30分钟K线: {ts_code}")
 
-            klines = []
-            for k in result["klines"]:
-                # 转换时间为 Unix timestamp
-                dt_str = k["datetime"]
-                try:
-                    dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
-                except ValueError:
-                    dt = datetime.strptime(dt_str, "%Y-%m-%d")
-                timestamp = int(dt.timestamp())
+        klines = []
+        for k in result["klines"]:
+            # 转换时间为 Unix timestamp
+            dt_str = k["datetime"]
+            try:
+                dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                dt = datetime.strptime(dt_str, "%Y-%m-%d")
+            timestamp = int(dt.timestamp())
 
-                klines.append({
-                    "datetime": timestamp,
-                    "open": k["open"],
-                    "high": k["high"],
-                    "low": k["low"],
-                    "close": k["close"],
-                    "volume": int(k["volume"]),
-                    "amount": k["amount"],
-                    "dif": k.get("dif"),
-                    "dea": k.get("dea"),
-                    "macd": k.get("macd"),
-                })
+            klines.append({
+                "datetime": timestamp,
+                "open": k["open"],
+                "high": k["high"],
+                "low": k["low"],
+                "close": k["close"],
+                "volume": int(k["volume"]),
+                "amount": k["amount"],
+                "dif": k.get("dif"),
+                "dea": k.get("dea"),
+                "macd": k.get("macd"),
+            })
 
-            return {
-                "ts_code": ts_code,
-                "name": result["symbol_name"] or get_index_name(ts_code),
-                "count": len(klines),
-                "klines": klines
-            }
+        return {
+            "ts_code": ts_code,
+            "name": result["symbol_name"] or get_index_name(ts_code),
+            "count": len(klines),
+            "klines": klines
+        }
 
     except HTTPException:
         raise
