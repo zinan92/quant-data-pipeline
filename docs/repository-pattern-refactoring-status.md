@@ -82,9 +82,10 @@
 
 ### 中优先级（定时任务和调度）
 
-3. **KlineScheduler** (`src/services/kline_scheduler.py` - 366行)
-   - 使用 `SessionLocal()` 2次
-   - 影响范围：定时更新任务
+3. ✅ **KlineScheduler** (`src/services/kline_scheduler.py` - 406行)
+   - 使用 Session 依赖注入
+   - 支持工厂方法和向后兼容
+   - 提交: `6aea13e` - refactor(kline_scheduler): 使用 Repository 模式和依赖注入
 
 4. **ScreenshotService** (`src/services/screenshot_service.py` - 476行)
    - 使用 `SessionLocal()` 3次
@@ -180,25 +181,29 @@ class SomeService:
 
 - **总览**: [#1 Repository 模式架构重构总览](https://github.com/zinan92/ashare/issues/1)
 
+**已完成的子任务**:
+- ✅ [#2 DataConsistencyValidator 重构](https://github.com/zinan92/ashare/issues/2) - 已完成
+- ✅ [#3 KlineScheduler 重构](https://github.com/zinan92/ashare/issues/3) - 已完成
+
 **待完成的子任务**:
-- [#2 DataConsistencyValidator 重构](https://github.com/zinan92/ashare/issues/2) - **高优先级**
-- [#3 KlineScheduler 重构](https://github.com/zinan92/ashare/issues/3) - 中优先级
 - [#4 ScreenshotService 重构](https://github.com/zinan92/ashare/issues/4) - 中优先级
 - [#5 SimulatedService 重构](https://github.com/zinan92/ashare/issues/5) - 低优先级
 
 ## 总结
 
-✅ **已完成** (5/9 = 56%):
+✅ **已完成** (7/9 = 78%):
 - Repository 层架构完整搭建（4个仓储类）
-- 5个核心服务完成重构
+- 7个核心服务完成重构
   - KlineService, KlineUpdater
   - BoardMappingService, TushareBoardService
-  - MarketDataService ✨ 最新完成
+  - MarketDataService
+  - DataConsistencyValidator
+  - KlineScheduler ✨ 最新完成
 - 完整的单元测试覆盖（50+ 测试用例）
 - 向后兼容设计
 
-⏳ **待完成** (4/9 = 44%):
-- 4个服务文件待重构（约1672行代码）
+⏳ **待完成** (2/9 = 22%):
+- 2个服务文件待重构（约959行代码）
 - 已创建 GitHub Issues 追踪进度
 - 按优先级逐步推进
 
