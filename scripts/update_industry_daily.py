@@ -20,7 +20,7 @@ sys.path.insert(0, str(project_root))
 from src.services.tushare_client import TushareClient
 from src.config import get_settings
 from src.database import SessionLocal
-from src.models import IndustryDaily, SymbolMetadata, Candle, Timeframe
+from src.models import IndustryDaily, SymbolMetadata, Kline, KlineTimeframe
 from sqlalchemy import func
 
 
@@ -61,18 +61,19 @@ def get_latest_candles_map(session, tickers: list[str]) -> dict[str, list]:
         ticker_chunk = tickers[i:i + CHUNK_SIZE]
 
         subq = session.query(
-            Candle,
+            Kline,
             func.row_number().over(
-                partition_by=Candle.ticker,
-                order_by=Candle.timestamp.desc()
+                partition_by=Kline.symbol_code,
+                order_by=Kline.trade_time.desc()
             ).label('rn')
         ).filter(
-            Candle.ticker.in_(ticker_chunk),
-            Candle.timeframe == Timeframe.DAY
+            Kline.symbol_code.in_(ticker_chunk),
+            Kline.timeframe == KlineTimeframe.DAY,
+            Kline.symbol_type == 'STOCK'
         ).subquery()
 
         latest_candles = session.query(
-            subq.c.ticker,
+            subq.c.symbol_code,
             subq.c.close,
             subq.c.rn
         ).filter(
@@ -80,9 +81,9 @@ def get_latest_candles_map(session, tickers: list[str]) -> dict[str, list]:
         ).all()
 
         for row in latest_candles:
-            if row.ticker not in ticker_candles_map:
-                ticker_candles_map[row.ticker] = []
-            ticker_candles_map[row.ticker].append(row)
+            if row.symbol_code not in ticker_candles_map:
+                ticker_candles_map[row.symbol_code] = []
+            ticker_candles_map[row.symbol_code].append(row)
 
     return ticker_candles_map
 

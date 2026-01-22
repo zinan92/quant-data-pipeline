@@ -6,6 +6,15 @@ from apscheduler.triggers.cron import CronTrigger
 from src.config import get_settings
 from src.utils.logging import LOGGER
 
+# Import script main functions
+import sys
+from pathlib import Path
+
+# Add scripts directory to path for imports
+scripts_dir = Path(__file__).parent.parent.parent / "scripts"
+if str(scripts_dir) not in sys.path:
+    sys.path.insert(0, str(scripts_dir))
+
 
 class SchedulerManager:
     """Wrapper around APScheduler to manage recurring refresh jobs."""
@@ -60,106 +69,82 @@ class SchedulerManager:
 
     def _update_industry_data(self) -> None:
         """Update industry daily data"""
-        import subprocess
-        from pathlib import Path
-
-        script_path = Path(__file__).parent.parent.parent / "scripts" / "update_industry_daily.py"
-        result = subprocess.run(
-            ["python", str(script_path)],
-            capture_output=True,
-            text=True
-        )
-
-        if result.returncode != 0:
-            LOGGER.error(f"Industry update failed: {result.stderr}")
-        else:
-            LOGGER.info("Industry update completed successfully")
+        try:
+            from scripts.update_industry_daily import main as update_industry_main
+            result = update_industry_main()
+            if result != 0:
+                LOGGER.error("Industry update failed")
+            else:
+                LOGGER.info("Industry update completed successfully")
+        except Exception as e:
+            LOGGER.error(f"Industry update exception: {e}", exc_info=True)
 
     def _update_super_category_data(self) -> None:
         """Update super category daily data"""
-        import subprocess
-        from pathlib import Path
-
-        script_path = Path(__file__).parent.parent.parent / "scripts" / "update_super_category_daily.py"
-        result = subprocess.run(
-            ["python", str(script_path)],
-            capture_output=True,
-            text=True
-        )
-
-        if result.returncode != 0:
-            LOGGER.error(f"Super category update failed: {result.stderr}")
-        else:
+        try:
+            from scripts.update_super_category_daily import update_super_category_daily
+            update_super_category_daily()
             LOGGER.info("Super category update completed successfully")
+        except Exception as e:
+            LOGGER.error(f"Super category update exception: {e}", exc_info=True)
 
     def _update_etf_data(self) -> None:
         """Update ETF kline and flow data"""
-        import subprocess
-        from pathlib import Path
-
-        scripts_dir = Path(__file__).parent.parent.parent / "scripts"
-
         # 0. Refresh the raw ETF daily summary so downstream scripts see latest data
         LOGGER.info("Updating ETF daily summary...")
-        summary_script = scripts_dir / "update_etf_daily_summary.py"
-        result = subprocess.run(
-            ["python", str(summary_script)],
-            capture_output=True,
-            text=True
-        )
-        if result.returncode != 0:
-            LOGGER.error(f"ETF daily summary update failed: {result.stderr}")
+        try:
+            from scripts.update_etf_daily_summary import main as update_etf_summary_main
+            result = update_etf_summary_main()
+            if result != 0:
+                LOGGER.error("ETF daily summary update failed")
+                return
+            LOGGER.info("ETF daily summary update completed successfully")
+        except Exception as e:
+            LOGGER.error(f"ETF daily summary update exception: {e}", exc_info=True)
             return
-        LOGGER.info("ETF daily summary update completed successfully")
 
         # 0.1 Build curated filtered snapshot for the dashboard and downstream scripts
         LOGGER.info("Building curated ETF filtered snapshot...")
-        filtered_script = scripts_dir / "build_etf_filtered.py"
-        result = subprocess.run(
-            ["python", str(filtered_script)],
-            capture_output=True,
-            text=True
-        )
-        if result.returncode != 0:
-            LOGGER.error(f"ETF filtered snapshot build failed: {result.stderr}")
+        try:
+            from scripts.build_etf_filtered import main as build_etf_filtered_main
+            build_etf_filtered_main()
+            LOGGER.info("ETF filtered snapshot build completed successfully")
+        except Exception as e:
+            LOGGER.error(f"ETF filtered snapshot build exception: {e}", exc_info=True)
             return
-        LOGGER.info("ETF filtered snapshot build completed successfully")
 
         # 0.2 Update ETF daily fund flow from akshare
         LOGGER.info("Updating ETF daily fund flow...")
-        flow_update_script = scripts_dir / "update_etf_daily_flow.py"
-        result = subprocess.run(
-            ["python", str(flow_update_script)],
-            capture_output=True,
-            text=True
-        )
-        if result.returncode != 0:
-            LOGGER.error(f"ETF daily flow update failed: {result.stderr}")
-        else:
-            LOGGER.info("ETF daily flow update completed successfully")
+        try:
+            from scripts.update_etf_daily_flow import main as update_etf_flow_main
+            result = update_etf_flow_main()
+            if result != 0:
+                LOGGER.error("ETF daily flow update failed")
+            else:
+                LOGGER.info("ETF daily flow update completed successfully")
+        except Exception as e:
+            LOGGER.error(f"ETF daily flow update exception: {e}", exc_info=True)
 
         # 1. Download ETF klines and calculate trend indicators
         LOGGER.info("Downloading ETF klines...")
-        kline_script = scripts_dir / "download_etf_klines.py"
-        result = subprocess.run(
-            ["python", str(kline_script)],
-            capture_output=True,
-            text=True
-        )
-        if result.returncode != 0:
-            LOGGER.error(f"ETF kline download failed: {result.stderr}")
-        else:
-            LOGGER.info("ETF kline download completed successfully")
+        try:
+            from scripts.download_etf_klines import main as download_etf_klines_main
+            result = download_etf_klines_main()
+            if result != 0:
+                LOGGER.error("ETF kline download failed")
+            else:
+                LOGGER.info("ETF kline download completed successfully")
+        except Exception as e:
+            LOGGER.error(f"ETF kline download exception: {e}", exc_info=True)
 
         # 2. Calculate 7d/30d fund flow history
         LOGGER.info("Calculating ETF fund flow history...")
-        flow_script = scripts_dir / "calc_etf_flow_history.py"
-        result = subprocess.run(
-            ["python", str(flow_script)],
-            capture_output=True,
-            text=True
-        )
-        if result.returncode != 0:
-            LOGGER.error(f"ETF flow calculation failed: {result.stderr}")
-        else:
-            LOGGER.info("ETF flow calculation completed successfully")
+        try:
+            from scripts.calc_etf_flow_history import main as calc_etf_flow_history_main
+            result = calc_etf_flow_history_main()
+            if result != 0:
+                LOGGER.error("ETF flow calculation failed")
+            else:
+                LOGGER.info("ETF flow calculation completed successfully")
+        except Exception as e:
+            LOGGER.error(f"ETF flow calculation exception: {e}", exc_info=True)
