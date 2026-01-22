@@ -7,10 +7,11 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import desc, func, text
+from sqlalchemy.orm import Session
 
-from src.database import SessionLocal
+from src.api.dependencies import get_db
 from src.models import DataUpdateLog, DataUpdateStatus, Kline, KlineTimeframe, SymbolType
 from src.services.kline_scheduler import get_scheduler
 from src.utils.logging import get_logger
@@ -24,14 +25,14 @@ logger = get_logger(__name__)
 
 @router.get("/update-status")
 def get_update_status(
-    limit: int = Query(default=20, ge=1, le=100, description="返回记录数")
+    limit: int = Query(default=20, ge=1, le=100, description="返回记录数"),
+    db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     """获取数据更新状态"""
-    session = SessionLocal()
     try:
         # 获取最近的更新记录
         logs = (
-            session.query(DataUpdateLog)
+            db.query(DataUpdateLog)
             .order_by(desc(DataUpdateLog.completed_at))
             .limit(limit)
             .all()
@@ -54,7 +55,7 @@ def get_update_status(
 
         # 获取K线数据统计
         kline_stats = (
-            session.query(
+            db.query(
                 Kline.symbol_type,
                 Kline.timeframe,
                 func.count(Kline.id).label("count"),
@@ -92,8 +93,9 @@ def get_update_status(
             ],
         }
 
-    finally:
-        session.close()
+    except Exception as e:
+        logger.exception("获取更新状态失败")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/scheduler/jobs")
@@ -136,12 +138,13 @@ async def run_scheduler_job(job_id: str) -> Dict[str, Any]:
 
 
 @router.get("/update-times")
-def get_update_times() -> Dict[str, Any]:
+def get_update_times(
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
     """
     获取各数据源的更新时间信息
     包括最后更新时间和下次更新时间
     """
-    session = SessionLocal()
     try:
         scheduler = get_scheduler()
         jobs = scheduler.get_jobs() if scheduler._is_running else []
@@ -151,7 +154,7 @@ def get_update_times() -> Dict[str, Any]:
         for symbol_type in ["index", "concept", "stock"]:
             for timeframe in ["day", "30m"]:
                 latest = (
-                    session.query(func.max(Kline.trade_time))
+                    db.query(func.max(Kline.trade_time))
                     .filter(
                         Kline.symbol_type == symbol_type,
                         Kline.timeframe == timeframe
@@ -217,18 +220,20 @@ def get_update_times() -> Dict[str, Any]:
             }
         }
 
-    finally:
-        session.close()
+    except Exception as e:
+        logger.exception("获取更新时间失败")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/kline-summary")
-def get_kline_summary() -> Dict[str, Any]:
+def get_kline_summary(
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
     """获取K线数据摘要"""
-    session = SessionLocal()
     try:
         # 各类型K线统计
         stats = (
-            session.query(
+            db.query(
                 Kline.symbol_type,
                 Kline.timeframe,
                 func.count(Kline.id).label("count"),
@@ -259,8 +264,9 @@ def get_kline_summary() -> Dict[str, Any]:
             "generated_at": datetime.now().isoformat(),
         }
 
-    finally:
-        session.close()
+    except Exception as e:
+        logger.exception("获取K线摘要失败")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/trading-status")
@@ -284,14 +290,15 @@ def get_trading_status() -> Dict[str, Any]:
 
 
 @router.get("/data-freshness")
-def validate_data_freshness() -> Dict[str, Any]:
+def validate_data_freshness(
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
     """
     验证数据新鲜度
     检查各类数据是否过期，返回问题列表和建议
     """
     from datetime import timedelta
 
-    session = SessionLocal()
     try:
         today = datetime.now().date()
         yesterday = today - timedelta(days=1)
@@ -299,7 +306,7 @@ def validate_data_freshness() -> Dict[str, Any]:
         warnings = []
 
         # 1. 检查概念日线数据新鲜度
-        concept_daily_stats = session.execute(
+        concept_daily_stats = db.execute(
             text("""
                 SELECT
                     MAX(trade_time) as latest,
@@ -331,7 +338,7 @@ def validate_data_freshness() -> Dict[str, Any]:
                 })
 
         # 2. 检查概念30分钟数据
-        concept_30m_latest = session.execute(
+        concept_30m_latest = db.execute(
             text("""
                 SELECT MAX(trade_time) FROM klines
                 WHERE symbol_type = 'CONCEPT' AND timeframe = 'MINS_30'
@@ -349,7 +356,7 @@ def validate_data_freshness() -> Dict[str, Any]:
                 })
 
         # 3. 检查指数日线数据
-        index_daily_latest = session.execute(
+        index_daily_latest = db.execute(
             text("""
                 SELECT MAX(trade_time) FROM klines
                 WHERE symbol_type = 'INDEX' AND timeframe = 'DAY'
@@ -365,7 +372,7 @@ def validate_data_freshness() -> Dict[str, Any]:
             })
 
         # 4. 检查异常日期（如年份>2100）
-        bad_dates_count = session.execute(
+        bad_dates_count = db.execute(
             text("""
                 SELECT COUNT(*) FROM klines WHERE trade_time > '2100-01-01'
             """)
@@ -393,13 +400,15 @@ def validate_data_freshness() -> Dict[str, Any]:
             }
         }
 
-    finally:
-        session.close()
+    except Exception as e:
+        logger.exception("数据新鲜度验证失败")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/data-consistency")
 async def validate_data_consistency(
-    symbol_codes: Optional[str] = Query(None, description="逗号分隔的概念代码，默认检查热门概念")
+    symbol_codes: Optional[str] = Query(None, description="逗号分隔的概念代码，默认检查热门概念"),
+    db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     """
     验证数据一致性
@@ -432,7 +441,6 @@ async def validate_data_consistency(
     else:
         codes_to_check = ["886100", "885728", "886099", "885756", "886069"]
 
-    session = SessionLocal()
     results = []
     issues = []
 
@@ -441,7 +449,7 @@ async def validate_data_consistency(
             result = {"code": code, "checks": []}
 
             # 获取日线最新数据
-            daily_data = session.execute(
+            daily_data = db.execute(
                 text("""
                     SELECT trade_time, close, symbol_name
                     FROM klines
@@ -452,7 +460,7 @@ async def validate_data_consistency(
             ).fetchone()
 
             # 获取30分钟最新数据
-            mins30_data = session.execute(
+            mins30_data = db.execute(
                 text("""
                     SELECT trade_time, close
                     FROM klines
@@ -539,8 +547,9 @@ async def validate_data_consistency(
 
             results.append(result)
 
-    finally:
-        session.close()
+    except Exception as e:
+        logger.exception("数据一致性验证失败")
+        raise HTTPException(status_code=500, detail=str(e))
 
     is_valid = len([i for i in issues if i["severity"] == "error"]) == 0
 
