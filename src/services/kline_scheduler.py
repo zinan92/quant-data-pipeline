@@ -368,7 +368,9 @@ def get_scheduler() -> KlineScheduler:
     """获取调度器单例"""
     global _scheduler
     if _scheduler is None:
-        _scheduler = KlineScheduler()
+        from src.database import SessionLocal
+        session = SessionLocal()
+        _scheduler = KlineScheduler(session)
     return _scheduler
 
 
