@@ -279,14 +279,14 @@ class KlineUpdater:
                     logger.info(f"  {name}: {count} 条")
 
             self._log_update(
-                session, "index_30m", DataUpdateStatus.COMPLETED, total_updated
+                self.kline_repo.session, "index_30m", DataUpdateStatus.COMPLETED, total_updated
             )
             logger.info(f"指数30分钟更新完成，共 {total_updated} 条")
 
         except Exception as e:
             logger.exception("指数30分钟更新失败")
             self._log_update(
-                session, "index_30m", DataUpdateStatus.FAILED, error_message=str(e)
+                self.kline_repo.session, "index_30m", DataUpdateStatus.FAILED, error_message=str(e)
             )
 
         return total_updated
@@ -432,14 +432,14 @@ class KlineUpdater:
                 await asyncio.sleep(0.5)
 
             self._log_update(
-                session, "concept_daily", DataUpdateStatus.COMPLETED, total_updated
+                self.kline_repo.session, "concept_daily", DataUpdateStatus.COMPLETED, total_updated
             )
             logger.info(f"概念日线更新完成，共 {total_updated} 条")
 
         except Exception as e:
             logger.exception("概念日线更新失败")
             self._log_update(
-                session, "concept_daily", DataUpdateStatus.FAILED, error_message=str(e)
+                self.kline_repo.session, "concept_daily", DataUpdateStatus.FAILED, error_message=str(e)
             )
 
         return total_updated
@@ -479,14 +479,14 @@ class KlineUpdater:
                 await asyncio.sleep(0.5)
 
             self._log_update(
-                session, "concept_30m", DataUpdateStatus.COMPLETED, total_updated
+                self.kline_repo.session, "concept_30m", DataUpdateStatus.COMPLETED, total_updated
             )
             logger.info(f"概念30分钟更新完成，共 {total_updated} 条")
 
         except Exception as e:
             logger.exception("概念30分钟更新失败")
             self._log_update(
-                session, "concept_30m", DataUpdateStatus.FAILED, error_message=str(e)
+                self.kline_repo.session, "concept_30m", DataUpdateStatus.FAILED, error_message=str(e)
             )
 
         return total_updated
@@ -557,14 +557,14 @@ class KlineUpdater:
                     continue
 
             self._log_update(
-                session, "stock_daily", DataUpdateStatus.COMPLETED, total_updated
+                self.kline_repo.session, "stock_daily", DataUpdateStatus.COMPLETED, total_updated
             )
             logger.info(f"自选股日线更新完成，共 {total_updated} 条")
 
         except Exception as e:
             logger.exception("自选股日线更新失败")
             self._log_update(
-                session, "stock_daily", DataUpdateStatus.FAILED, error_message=str(e)
+                self.kline_repo.session, "stock_daily", DataUpdateStatus.FAILED, error_message=str(e)
             )
 
         return total_updated
@@ -624,14 +624,14 @@ class KlineUpdater:
                     continue
 
             self._log_update(
-                session, "stock_30m", DataUpdateStatus.COMPLETED, total_updated
+                self.kline_repo.session, "stock_30m", DataUpdateStatus.COMPLETED, total_updated
             )
             logger.info(f"自选股30分钟更新完成，共 {total_updated} 条")
 
         except Exception as e:
             logger.exception("自选股30分钟更新失败")
             self._log_update(
-                session, "stock_30m", DataUpdateStatus.FAILED, error_message=str(e)
+                self.kline_repo.session, "stock_30m", DataUpdateStatus.FAILED, error_message=str(e)
             )
 
         return total_updated
@@ -714,7 +714,7 @@ class KlineUpdater:
 
             elapsed = time.time() - start_time
             self._log_update(
-                session, "all_stock_daily", DataUpdateStatus.COMPLETED, total_updated
+                self.kline_repo.session, "all_stock_daily", DataUpdateStatus.COMPLETED, total_updated
             )
             logger.info("=" * 50)
             logger.info(
@@ -726,7 +726,7 @@ class KlineUpdater:
         except Exception as e:
             logger.exception("全市场日线更新失败")
             self._log_update(
-                session, "all_stock_daily", DataUpdateStatus.FAILED, error_message=str(e)
+                self.kline_repo.session, "all_stock_daily", DataUpdateStatus.FAILED, error_message=str(e)
             )
 
         return total_updated
@@ -844,7 +844,7 @@ class KlineUpdater:
 
             self.kline_repo.session.commit()
             self._log_update(
-                session, "trade_calendar", DataUpdateStatus.COMPLETED, count
+                self.kline_repo.session, "trade_calendar", DataUpdateStatus.COMPLETED, count
             )
             logger.info(f"交易日历更新完成，共 {count} 条")
             return count
@@ -852,7 +852,7 @@ class KlineUpdater:
         except Exception as e:
             logger.exception("交易日历更新失败")
             self._log_update(
-                session,
+                self.kline_repo.session,
                 "trade_calendar",
                 DataUpdateStatus.FAILED,
                 error_message=str(e),
@@ -903,13 +903,13 @@ class KlineUpdater:
 
             self.kline_repo.session.commit()
             self._log_update(
-                session, "cleanup", DataUpdateStatus.COMPLETED, total_deleted
+                self.kline_repo.session, "cleanup", DataUpdateStatus.COMPLETED, total_deleted
             )
             logger.info(f"数据清理完成，共删除 {total_deleted} 条")
 
         except Exception as e:
             logger.exception("数据清理失败")
-            session.rollback()
+            self.kline_repo.session.rollback()
 
         return total_deleted
 
