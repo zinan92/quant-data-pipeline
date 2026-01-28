@@ -116,32 +116,48 @@ class IndexUpdater:
         """更新指数日线数据"""
         logger.info("开始更新指数日线数据...")
         total_updated = 0
+        failed_indexes = []
 
-        try:
-            tasks = [
-                self._fetch_kline(ts_code, name, scale=240)
-                for ts_code, name in INDEX_LIST
-            ]
-            results = await asyncio.gather(*tasks)
+        # 复用同一个 service 实例
+        service = KlineService(self.kline_repo, self.symbol_repo)
 
-            for (ts_code, name), klines in zip(INDEX_LIST, results):
-                if klines:
-                    service = KlineService(self.kline_repo, self.symbol_repo)
-                    count = service.save_klines(
-                        symbol_type=SymbolType.INDEX,
-                        symbol_code=ts_code,
-                        symbol_name=name,
-                        timeframe=KlineTimeframe.DAY,
-                        klines=klines,
-                    )
-                    total_updated += count
-                    logger.info(f"  {name}: {count} 条")
+        # 并发获取所有指数数据
+        tasks = [
+            self._fetch_kline(ts_code, name, scale=240)
+            for ts_code, name in INDEX_LIST
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
+        for (ts_code, name), result in zip(INDEX_LIST, results):
+            # 处理异常情况
+            if isinstance(result, Exception):
+                logger.error(f"  {name}: 获取失败 - {result}")
+                failed_indexes.append(name)
+                continue
+
+            klines = result
+            if not klines:
+                logger.warning(f"  {name}: 无数据")
+                continue
+
+            try:
+                count = service.save_klines(
+                    symbol_type=SymbolType.INDEX,
+                    symbol_code=ts_code,
+                    symbol_name=name,
+                    timeframe=KlineTimeframe.DAY,
+                    klines=klines,
+                )
+                total_updated += count
+                logger.info(f"  {name}: {count} 条")
+            except Exception as e:
+                logger.error(f"  {name}: 保存失败 - {e}")
+                failed_indexes.append(name)
+
+        if failed_indexes:
+            logger.warning(f"指数日线更新完成，失败: {failed_indexes}")
+        else:
             logger.info(f"指数日线更新完成，共 {total_updated} 条")
-
-        except Exception as e:
-            logger.exception("指数日线更新失败")
-            raise
 
         return total_updated
 
@@ -149,31 +165,47 @@ class IndexUpdater:
         """更新指数30分钟数据"""
         logger.info("开始更新指数30分钟数据...")
         total_updated = 0
+        failed_indexes = []
 
-        try:
-            tasks = [
-                self._fetch_kline(ts_code, name, scale=30)
-                for ts_code, name in INDEX_LIST
-            ]
-            results = await asyncio.gather(*tasks)
+        # 复用同一个 service 实例
+        service = KlineService(self.kline_repo, self.symbol_repo)
 
-            for (ts_code, name), klines in zip(INDEX_LIST, results):
-                if klines:
-                    service = KlineService(self.kline_repo, self.symbol_repo)
-                    count = service.save_klines(
-                        symbol_type=SymbolType.INDEX,
-                        symbol_code=ts_code,
-                        symbol_name=name,
-                        timeframe=KlineTimeframe.MINS_30,
-                        klines=klines,
-                    )
-                    total_updated += count
-                    logger.info(f"  {name}: {count} 条")
+        # 并发获取所有指数数据
+        tasks = [
+            self._fetch_kline(ts_code, name, scale=30)
+            for ts_code, name in INDEX_LIST
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
+        for (ts_code, name), result in zip(INDEX_LIST, results):
+            # 处理异常情况
+            if isinstance(result, Exception):
+                logger.error(f"  {name}: 获取失败 - {result}")
+                failed_indexes.append(name)
+                continue
+
+            klines = result
+            if not klines:
+                logger.warning(f"  {name}: 无数据")
+                continue
+
+            try:
+                count = service.save_klines(
+                    symbol_type=SymbolType.INDEX,
+                    symbol_code=ts_code,
+                    symbol_name=name,
+                    timeframe=KlineTimeframe.MINS_30,
+                    klines=klines,
+                )
+                total_updated += count
+                logger.info(f"  {name}: {count} 条")
+            except Exception as e:
+                logger.error(f"  {name}: 保存失败 - {e}")
+                failed_indexes.append(name)
+
+        if failed_indexes:
+            logger.warning(f"指数30分钟更新完成，失败: {failed_indexes}")
+        else:
             logger.info(f"指数30分钟更新完成，共 {total_updated} 条")
-
-        except Exception as e:
-            logger.exception("指数30分钟更新失败")
-            raise
 
         return total_updated

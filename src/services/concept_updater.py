@@ -140,86 +140,115 @@ class ConceptUpdater:
         """更新概念日线数据"""
         logger.info("开始更新概念日线数据...")
         total_updated = 0
+        failed_count = 0
 
         concepts = self._load_hot_concepts()
         if not concepts:
             logger.warning("未找到热门概念列表")
             return 0
 
-        try:
-            async def fetch_one(code: str, expected_name: str):
-                name, klines = await self._fetch_ths_kline(code, "01")
-                return code, name or expected_name, klines
+        # 复用同一个 service 实例
+        service = KlineService(self.kline_repo, self.symbol_repo)
 
-            # 分批处理，避免并发过多
-            batch_size = 10
-            for i in range(0, len(concepts), batch_size):
-                batch = concepts[i : i + batch_size]
-                tasks = [fetch_one(code, name) for code, name in batch]
-                results = await asyncio.gather(*tasks)
+        async def fetch_one(code: str, expected_name: str):
+            name, klines = await self._fetch_ths_kline(code, "01")
+            return code, name or expected_name, klines
 
-                for code, name, klines in results:
-                    if klines:
-                        service = KlineService(self.kline_repo, self.symbol_repo)
-                        count = service.save_klines(
-                            symbol_type=SymbolType.CONCEPT,
-                            symbol_code=code,
-                            symbol_name=name,
-                            timeframe=KlineTimeframe.DAY,
-                            klines=klines,
-                        )
-                        total_updated += count
+        # 分批处理，避免并发过多
+        batch_size = 10
+        total_batches = (len(concepts) + batch_size - 1) // batch_size
 
-                # 批次间延迟
-                await asyncio.sleep(0.5)
+        for batch_idx, i in enumerate(range(0, len(concepts), batch_size)):
+            batch = concepts[i : i + batch_size]
+            tasks = [fetch_one(code, name) for code, name in batch]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            logger.info(f"概念日线更新完成，共 {total_updated} 条")
+            for (code, expected_name), result in zip(batch, results):
+                if isinstance(result, Exception):
+                    logger.error(f"  {expected_name}: 获取失败 - {result}")
+                    failed_count += 1
+                    continue
 
-        except Exception as e:
-            logger.exception("概念日线更新失败")
-            raise
+                code, name, klines = result
+                if not klines:
+                    continue
 
+                try:
+                    count = service.save_klines(
+                        symbol_type=SymbolType.CONCEPT,
+                        symbol_code=code,
+                        symbol_name=name,
+                        timeframe=KlineTimeframe.DAY,
+                        klines=klines,
+                    )
+                    total_updated += count
+                except Exception as e:
+                    logger.error(f"  {name}: 保存失败 - {e}")
+                    failed_count += 1
+
+            # 批次间延迟
+            await asyncio.sleep(0.5)
+
+            # 进度日志（每5批输出一次）
+            if (batch_idx + 1) % 5 == 0:
+                logger.info(f"  进度: {batch_idx + 1}/{total_batches} 批")
+
+        logger.info(f"概念日线更新完成，共 {total_updated} 条，失败 {failed_count} 个")
         return total_updated
 
     async def update_30m(self) -> int:
         """更新概念30分钟数据"""
         logger.info("开始更新概念30分钟数据...")
         total_updated = 0
+        failed_count = 0
 
         concepts = self._load_hot_concepts()
         if not concepts:
             logger.warning("未找到热门概念列表")
             return 0
 
-        try:
-            async def fetch_one(code: str, expected_name: str):
-                name, klines = await self._fetch_ths_kline(code, "30")
-                return code, name or expected_name, klines
+        # 复用同一个 service 实例
+        service = KlineService(self.kline_repo, self.symbol_repo)
 
-            batch_size = 10
-            for i in range(0, len(concepts), batch_size):
-                batch = concepts[i : i + batch_size]
-                tasks = [fetch_one(code, name) for code, name in batch]
-                results = await asyncio.gather(*tasks)
+        async def fetch_one(code: str, expected_name: str):
+            name, klines = await self._fetch_ths_kline(code, "30")
+            return code, name or expected_name, klines
 
-                for code, name, klines in results:
-                    if klines:
-                        service = KlineService(self.kline_repo, self.symbol_repo)
-                        count = service.save_klines(
-                            symbol_type=SymbolType.CONCEPT,
-                            symbol_code=code,
-                            symbol_name=name,
-                            timeframe=KlineTimeframe.MINS_30,
-                            klines=klines,
-                        )
-                        total_updated += count
+        batch_size = 10
+        total_batches = (len(concepts) + batch_size - 1) // batch_size
 
-                await asyncio.sleep(0.5)
+        for batch_idx, i in enumerate(range(0, len(concepts), batch_size)):
+            batch = concepts[i : i + batch_size]
+            tasks = [fetch_one(code, name) for code, name in batch]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            logger.info(f"概念30分钟更新完成，共 {total_updated} 条")
+            for (code, expected_name), result in zip(batch, results):
+                if isinstance(result, Exception):
+                    logger.error(f"  {expected_name}: 获取失败 - {result}")
+                    failed_count += 1
+                    continue
 
-        except Exception as e:
-            logger.exception("概念30分钟更新失败")
-            raise
+                code, name, klines = result
+                if not klines:
+                    continue
 
+                try:
+                    count = service.save_klines(
+                        symbol_type=SymbolType.CONCEPT,
+                        symbol_code=code,
+                        symbol_name=name,
+                        timeframe=KlineTimeframe.MINS_30,
+                        klines=klines,
+                    )
+                    total_updated += count
+                except Exception as e:
+                    logger.error(f"  {name}: 保存失败 - {e}")
+                    failed_count += 1
+
+            await asyncio.sleep(0.5)
+
+            if (batch_idx + 1) % 5 == 0:
+                logger.info(f"  进度: {batch_idx + 1}/{total_batches} 批")
+
+        logger.info(f"概念30分钟更新完成，共 {total_updated} 条，失败 {failed_count} 个")
         return total_updated
