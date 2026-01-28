@@ -73,6 +73,33 @@ def add_to_watchlist(session: Session, ticker: str, stock_name: str):
     return True
 
 
+def update_sector_classification(session: Session, ticker: str, new_sector: str):
+    """更新股票的赛道分类（stock_sectors表）"""
+    from datetime import datetime
+    from sqlalchemy import text
+
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    # 检查当前赛道
+    result = session.execute(
+        text("SELECT sector FROM stock_sectors WHERE ticker = :ticker"),
+        {"ticker": ticker}
+    ).fetchone()
+
+    if result:
+        old_sector = result[0]
+        session.execute(
+            text("UPDATE stock_sectors SET sector = :sector, updated_at = :now WHERE ticker = :ticker"),
+            {"ticker": ticker, "sector": new_sector, "now": now}
+        )
+        session.commit()
+        print(f"✓ 赛道分类: {old_sector} → {new_sector}")
+        return True
+    else:
+        print(f"✗ stock_sectors 中未找到 {ticker}")
+        return False
+
+
 def main():
     """主函数"""
     db = SessionLocal()
@@ -85,15 +112,19 @@ def main():
         ticker = '601899'
         stock_name = '紫金矿业'
 
-        # 1. 更新行业分类
-        print(f"\n1. 更新行业分类")
+        # 1. 更新行业分类 (symbol_metadata.industry_lv1)
+        print(f"\n1. 更新行业分类 (symbol_metadata)")
         update_industry_classification(db, ticker, '贵金属')
 
-        # 2. 添加到自选股
-        print(f"\n2. 添加到自选股")
+        # 2. 更新赛道分类 (stock_sectors.sector)
+        print(f"\n2. 更新赛道分类 (stock_sectors)")
+        update_sector_classification(db, ticker, '贵金属')
+
+        # 3. 添加到自选股
+        print(f"\n3. 添加到自选股")
         add_to_watchlist(db, ticker, stock_name)
 
-        # 3. 验证结果
+        # 4. 验证结果
         print("\n" + "="*60)
         print("验证结果:")
         print("="*60)
@@ -102,28 +133,37 @@ def main():
         symbol = db.query(SymbolMetadata).filter(
             SymbolMetadata.ticker == ticker
         ).first()
-        print(f"\nSymbol Metadata:")
-        print(f"  {symbol.name} ({symbol.ticker})")
-        print(f"  Industry L1: {symbol.industry_lv1}")
+        print(f"\n1. Symbol Metadata:")
+        print(f"   {symbol.name} ({symbol.ticker})")
+        print(f"   Industry L1: {symbol.industry_lv1}")
+
+        # 检查 stock_sectors
+        from sqlalchemy import text
+        sector_result = db.execute(
+            text("SELECT sector FROM stock_sectors WHERE ticker = :ticker"),
+            {"ticker": ticker}
+        ).fetchone()
+        print(f"\n2. Stock Sectors:")
+        print(f"   Sector: {sector_result[0] if sector_result else 'N/A'}")
 
         # 检查贵金属板块
         precious_metal = db.query(BoardMapping).filter(
             BoardMapping.board_code == '881169.TI'
         ).first()
-        print(f"\n贵金属板块 (881169.TI):")
-        print(f"  成分股数: {len(precious_metal.constituents) if precious_metal.constituents else 0}")
-        print(f"  包含紫金矿业: {'601899' in (precious_metal.constituents or [])}")
+        print(f"\n3. 贵金属板块 (881169.TI):")
+        print(f"   成分股数: {len(precious_metal.constituents) if precious_metal.constituents else 0}")
+        print(f"   包含紫金矿业: {'601899' in (precious_metal.constituents or [])}")
 
         # 检查自选股
         watchlist = db.query(BoardMapping).filter(
             BoardMapping.board_name == '自选股'
         ).first()
-        print(f"\n自选股:")
-        print(f"  Board Code: {watchlist.board_code}")
-        print(f"  成分股数: {len(watchlist.constituents) if watchlist.constituents else 0}")
-        print(f"  包含紫金矿业: {'601899' in (watchlist.constituents or [])}")
+        print(f"\n4. 自选股:")
+        print(f"   Board Code: {watchlist.board_code}")
+        print(f"   成分股数: {len(watchlist.constituents) if watchlist.constituents else 0}")
+        print(f"   包含紫金矿业: {'601899' in (watchlist.constituents or [])}")
         if watchlist.constituents:
-            print(f"  成分股列表: {sorted(watchlist.constituents)}")
+            print(f"   成分股列表: {sorted(watchlist.constituents)}")
 
         print("\n" + "="*60)
         print("✓ 更新完成")
