@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from src.api import routes_candles, routes_meta, routes_tasks, routes_status, routes_watchlist, routes_realtime, routes_index, routes_concepts, routes_evaluations, routes_klines, routes_admin, routes_simulated, routes_earnings, routes_sectors, routes_concept_monitor_v2, routes_tonghuashun, routes_news
+from src.api import routes_candles, routes_meta, routes_tasks, routes_status, routes_watchlist, routes_realtime, routes_index, routes_concepts, routes_evaluations, routes_klines, routes_admin, routes_simulated, routes_earnings, routes_sectors, routes_concept_monitor_v2, routes_tonghuashun, routes_news, routes_us_stock
 
 api_router = APIRouter()
 
@@ -21,3 +21,4 @@ api_router.include_router(routes_sectors.router, prefix="/sectors", tags=["secto
 api_router.include_router(routes_concept_monitor_v2.router, prefix="/concept-monitor", tags=["concept-monitor"])
 api_router.include_router(routes_tonghuashun.router)
 api_router.include_router(routes_news.router, prefix="/news", tags=["news"])
+api_router.include_router(routes_us_stock.router, prefix="/us-stock", tags=["us-stock"])
