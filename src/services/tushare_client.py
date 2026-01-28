@@ -462,40 +462,6 @@ class TushareClient:
             trade_date=trade_date,
             ts_code=ts_code
         )
-
-    def fetch_dc_index(
-        self,
-        ts_code: Optional[str] = None,
-        name: Optional[str] = None,
-        trade_date: Optional[str] = None,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None
-    ) -> pd.DataFrame:
-        """
-        获取东方财富概念板块数据
-
-        Args:
-            ts_code: 指数代码（支持多个代码同时输入，用逗号分隔）
-            name: 板块名称（例如：人形机器人）
-            trade_date: 交易日期 YYYYMMDD
-            start_date: 开始日期 YYYYMMDD
-            end_date: 结束日期 YYYYMMDD
-
-        Returns:
-            DataFrame: 包含 ts_code, trade_date, name, leading, leading_code,
-                      pct_change, leading_pct, total_mv, turnover_rate, up_num, down_num 等字段
-        """
-        logger.info(f"获取东方财富概念板块: trade_date={trade_date}, name={name}")
-
-        return self._request_with_retry(
-            self.pro.dc_index,
-            ts_code=ts_code,
-            name=name,
-            trade_date=trade_date,
-            start_date=start_date,
-            end_date=end_date
-        )
-
     # ====================
     # 辅助方法
     # ====================
