@@ -1,0 +1,166 @@
+/* 新闻快讯滚动条 */
+.news-ticker {
+  display: flex;
+  align-items: center;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border-radius: 8px;
+  padding: 8px 16px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.news-ticker--loading {
+  color: #888;
+  justify-content: center;
+}
+
+.news-ticker__label {
+  flex-shrink: 0;
+  background: #e94560;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-weight: bold;
+  font-size: 12px;
+  margin-right: 16px;
+}
+
+.news-ticker__content {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.news-ticker__scroll {
+  display: flex;
+  animation: scroll 60s linear infinite;
+  white-space: nowrap;
+}
+
+.news-ticker__scroll:hover {
+  animation-play-state: paused;
+}
+
+@keyframes scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.news-ticker__item {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 16px;
+}
+
+.news-ticker__source {
+  color: #e94560;
+  font-size: 12px;
+  margin-right: 8px;
+}
+
+.news-ticker__title {
+  color: #e0e0e0;
+  font-size: 13px;
+}
+
+.news-ticker__separator {
+  color: #444;
+  margin-left: 16px;
+}
+
+/* 异动提醒面板 */
+.market-alerts-panel {
+  background: #1a1a2e;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.market-alerts-panel--loading {
+  color: #888;
+  text-align: center;
+  padding: 32px;
+}
+
+.market-alerts-panel__title {
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 16px 0;
+}
+
+.market-alerts-panel__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.market-alerts-panel__card {
+  background: #16213e;
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.market-alerts-panel__card:hover {
+  border-color: #e94560;
+  transform: translateY(-2px);
+}
+
+.market-alerts-panel__card--expanded {
+  border-color: #e94560;
+}
+
+.market-alerts-panel__card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.market-alerts-panel__icon {
+  font-size: 20px;
+}
+
+.market-alerts-panel__type {
+  color: #e0e0e0;
+  font-size: 14px;
+  flex: 1;
+}
+
+.market-alerts-panel__count {
+  background: #e94560;
+  color: white;
+  font-size: 12px;
+  font-weight: bold;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.market-alerts-panel__card-body {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #2a2a4e;
+}
+
+.market-alerts-panel__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.market-alerts-panel__item-time {
+  color: #666;
+}
+
+.market-alerts-panel__item-code {
+  color: #e94560;
+  font-family: monospace;
+}
+
+.market-alerts-panel__item-name {
+  color: #e0e0e0;
+}

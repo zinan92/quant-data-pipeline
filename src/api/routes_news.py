@@ -5,7 +5,7 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Query, HTTPException
 from pydantic import BaseModel
 
-from src.services.news import get_news_service, get_news_aggregator, get_alerts_service, get_external_service
+from src.services.news import get_news_service, get_news_aggregator, get_alerts_service, get_external_service, get_smart_alert_system
 
 router = APIRouter()
 
@@ -253,3 +253,67 @@ async def get_rss_feed(
     service = get_external_service()
     items = service.fetch_rss_feed(url, name=name, limit=limit)
     return {"name": name, "url": url, "count": len(items), "items": items}
+
+
+# ==================== 智能推送 ====================
+
+@router.get("/smart-alerts/rules")
+async def get_smart_alert_rules():
+    """获取所有告警规则"""
+    system = get_smart_alert_system()
+    return {"rules": system.get_rules()}
+
+
+@router.get("/smart-alerts/recent")
+async def get_recent_smart_alerts(limit: int = Query(20, ge=1, le=100)):
+    """获取最近触发的告警"""
+    system = get_smart_alert_system()
+    return {"alerts": system.get_recent_alerts(limit)}
+
+
+@router.post("/smart-alerts/scan")
+async def scan_for_alerts():
+    """
+    执行一次扫描，检查新闻和异动
+    返回触发的告警
+    """
+    system = get_smart_alert_system()
+    alerts = system.scan()
+    return {
+        "triggered": len(alerts),
+        "alerts": [
+            {
+                "rule_name": a.rule_name,
+                "priority": a.priority,
+                "title": a.title,
+                "content": a.content[:200],
+                "source": a.source,
+                "time": a.time,
+            }
+            for a in alerts
+        ]
+    }
+
+
+@router.post("/smart-alerts/add-keyword-rule")
+async def add_keyword_rule(
+    name: str,
+    keywords: List[str],
+    priority: str = "normal",
+):
+    """添加关键词告警规则"""
+    system = get_smart_alert_system()
+    system.add_keyword_rule(name=name, keywords=keywords, priority=priority)
+    return {"status": "ok", "message": f"Added rule: {name}"}
+
+
+@router.post("/smart-alerts/add-stock-rule")
+async def add_stock_rule(
+    name: str,
+    stock_codes: List[str],
+    priority: str = "high",
+):
+    """添加自选股告警规则"""
+    system = get_smart_alert_system()
+    system.add_stock_rule(name=name, stock_codes=stock_codes, priority=priority)
+    return {"status": "ok", "message": f"Added stock rule: {name}"}
