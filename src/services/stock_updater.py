@@ -39,6 +39,7 @@ class StockUpdater:
 
         logger.info("开始更新自选股日线数据...")
         total_updated = 0
+        failed_count = 0
 
         tickers = self._get_watchlist_tickers()
         if not tickers:
@@ -49,46 +50,45 @@ class StockUpdater:
         provider = EastMoneyKlineProvider(delay=0.1)
         kline_service = KlineService(self.kline_repo, self.symbol_repo)
 
-        try:
-            for ticker in tickers:
-                try:
-                    df = provider.fetch_kline(ticker, period="day", limit=120)
-                    if df is None or df.empty:
-                        logger.debug(f"{ticker} 无日线数据")
-                        continue
-
-                    klines = []
-                    for _, row in df.iterrows():
-                        klines.append({
-                            "datetime": row["timestamp"].strftime("%Y-%m-%d"),
-                            "open": row["open"],
-                            "high": row["high"],
-                            "low": row["low"],
-                            "close": row["close"],
-                            "volume": row["volume"],
-                            "amount": 0,
-                        })
-
-                    count = kline_service.save_klines(
-                        symbol_type=SymbolType.STOCK,
-                        symbol_code=ticker,
-                        symbol_name=None,
-                        timeframe=KlineTimeframe.DAY,
-                        klines=klines,
-                    )
-                    total_updated += count
-                    logger.debug(f"{ticker} 日线: {count} 条")
-
-                except Exception as e:
-                    logger.warning(f"{ticker} 日线更新失败: {e}")
+        for i, ticker in enumerate(tickers):
+            try:
+                df = provider.fetch_kline(ticker, period="day", limit=120)
+                if df is None or df.empty:
+                    logger.debug(f"{ticker} 无日线数据")
                     continue
 
-            logger.info(f"自选股日线更新完成，共 {total_updated} 条")
+                klines = []
+                for _, row in df.iterrows():
+                    klines.append({
+                        "datetime": row["timestamp"].strftime("%Y-%m-%d"),
+                        "open": row["open"],
+                        "high": row["high"],
+                        "low": row["low"],
+                        "close": row["close"],
+                        "volume": row["volume"],
+                        "amount": 0,
+                    })
 
-        except Exception as e:
-            logger.exception("自选股日线更新失败")
-            raise
+                count = kline_service.save_klines(
+                    symbol_type=SymbolType.STOCK,
+                    symbol_code=ticker,
+                    symbol_name=None,
+                    timeframe=KlineTimeframe.DAY,
+                    klines=klines,
+                )
+                total_updated += count
+                logger.debug(f"{ticker} 日线: {count} 条")
 
+            except Exception as e:
+                logger.warning(f"{ticker} 日线更新失败: {e}")
+                failed_count += 1
+                continue
+
+            # 每50只股票打印一次进度
+            if (i + 1) % 50 == 0:
+                logger.info(f"  进度: {i + 1}/{len(tickers)}")
+
+        logger.info(f"自选股日线更新完成，共 {total_updated} 条，失败 {failed_count} 个")
         return total_updated
 
     async def update_watchlist_30m(self) -> int:
@@ -97,6 +97,7 @@ class StockUpdater:
 
         logger.info("开始更新自选股30分钟数据...")
         total_updated = 0
+        failed_count = 0
 
         tickers = self._get_watchlist_tickers()
         if not tickers:
@@ -107,46 +108,45 @@ class StockUpdater:
         provider = SinaKlineProvider(delay=0.5)
         kline_service = KlineService(self.kline_repo, self.symbol_repo)
 
-        try:
-            for ticker in tickers:
-                try:
-                    df = provider.fetch_kline(ticker, period="30m", limit=500)
-                    if df is None or df.empty:
-                        logger.debug(f"{ticker} 无30分钟数据")
-                        continue
-
-                    klines = []
-                    for _, row in df.iterrows():
-                        klines.append({
-                            "datetime": row["timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
-                            "open": row["open"],
-                            "high": row["high"],
-                            "low": row["low"],
-                            "close": row["close"],
-                            "volume": row["volume"],
-                            "amount": 0,
-                        })
-
-                    count = kline_service.save_klines(
-                        symbol_type=SymbolType.STOCK,
-                        symbol_code=ticker,
-                        symbol_name=None,
-                        timeframe=KlineTimeframe.MINS_30,
-                        klines=klines,
-                    )
-                    total_updated += count
-                    logger.debug(f"{ticker} 30分钟: {count} 条")
-
-                except Exception as e:
-                    logger.warning(f"{ticker} 30分钟更新失败: {e}")
+        for i, ticker in enumerate(tickers):
+            try:
+                df = provider.fetch_kline(ticker, period="30m", limit=500)
+                if df is None or df.empty:
+                    logger.debug(f"{ticker} 无30分钟数据")
                     continue
 
-            logger.info(f"自选股30分钟更新完成，共 {total_updated} 条")
+                klines = []
+                for _, row in df.iterrows():
+                    klines.append({
+                        "datetime": row["timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
+                        "open": row["open"],
+                        "high": row["high"],
+                        "low": row["low"],
+                        "close": row["close"],
+                        "volume": row["volume"],
+                        "amount": 0,
+                    })
 
-        except Exception as e:
-            logger.exception("自选股30分钟更新失败")
-            raise
+                count = kline_service.save_klines(
+                    symbol_type=SymbolType.STOCK,
+                    symbol_code=ticker,
+                    symbol_name=None,
+                    timeframe=KlineTimeframe.MINS_30,
+                    klines=klines,
+                )
+                total_updated += count
+                logger.debug(f"{ticker} 30分钟: {count} 条")
 
+            except Exception as e:
+                logger.warning(f"{ticker} 30分钟更新失败: {e}")
+                failed_count += 1
+                continue
+
+            # 每50只股票打印一次进度
+            if (i + 1) % 50 == 0:
+                logger.info(f"  进度: {i + 1}/{len(tickers)}")
+
+        logger.info(f"自选股30分钟更新完成，共 {total_updated} 条，失败 {failed_count} 个")
         return total_updated
 
     async def update_all_daily(self) -> int:
@@ -252,6 +252,9 @@ class StockUpdater:
         result = {"daily": 0, "mins30": 0}
         logger.info(f"开始更新单股 {ticker} 的K线数据...")
 
+        # 复用同一个 service 实例
+        service = KlineService(self.kline_repo, self.symbol_repo)
+
         # 1. 更新日线 (东方财富)
         try:
             eastmoney = EastMoneyKlineProvider()
@@ -261,7 +264,6 @@ class StockUpdater:
                 if 'timestamp' in daily_df.columns:
                     daily_df = daily_df.rename(columns={'timestamp': 'datetime'})
                 daily_klines = daily_df.to_dict('records')
-                service = KlineService(self.kline_repo, self.symbol_repo)
                 count = service.save_klines(
                     symbol_type=SymbolType.STOCK,
                     symbol_code=ticker,
@@ -285,7 +287,6 @@ class StockUpdater:
                 if 'timestamp' in mins30_df.columns:
                     mins30_df = mins30_df.rename(columns={'timestamp': 'datetime'})
                 mins30_klines = mins30_df.to_dict('records')
-                service = KlineService(self.kline_repo, self.symbol_repo)
                 count = service.save_klines(
                     symbol_type=SymbolType.STOCK,
                     symbol_code=ticker,
