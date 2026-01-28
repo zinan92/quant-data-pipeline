@@ -500,6 +500,32 @@ class TushareClient:
     # 辅助方法
     # ====================
 
+    def fetch_trade_calendar(
+        self,
+        exchange: str = "SSE",
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
+    ) -> pd.DataFrame:
+        """
+        获取交易日历
+
+        Args:
+            exchange: 交易所代码（SSE=上交所, SZSE=深交所）
+            start_date: 开始日期 YYYYMMDD
+            end_date: 结束日期 YYYYMMDD
+
+        Returns:
+            DataFrame: 包含 cal_date, is_open 等字段
+        """
+        logger.info(f"获取交易日历: {exchange}, {start_date} - {end_date}")
+
+        return self._request_with_retry(
+            self.pro.trade_cal,
+            exchange=exchange,
+            start_date=start_date,
+            end_date=end_date
+        )
+
     def get_latest_trade_date(self) -> str:
         """
         获取最新交易日期
