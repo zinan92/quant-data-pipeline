@@ -12,7 +12,6 @@ export interface SymbolMeta {
   industryLv1: string | null;
   industryLv2: string | null;
   industryLv3: string | null;
-  superCategory: string | null;  // 超级行业组（14个大类）
   concepts: string[];            // 概念板块列表
 
   // Company information
