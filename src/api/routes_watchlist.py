@@ -241,6 +241,7 @@ def get_portfolio_history():
         tickers = [item.ticker for item in watchlist_items]
 
         # 查询这些股票的所有历史K线数据（从 klines 表）
+        # 注：股票K线目前只有30分钟数据，使用MINS_30
         klines_query = session.query(
             Kline.trade_time,
             Kline.symbol_code,
@@ -248,7 +249,7 @@ def get_portfolio_history():
         ).filter(
             Kline.symbol_code.in_(tickers),
             Kline.symbol_type == SymbolType.STOCK,
-            Kline.timeframe == KlineTimeframe.DAY,
+            Kline.timeframe == KlineTimeframe.MINS_30,
             Kline.trade_time >= earliest_date_str
         ).order_by(Kline.trade_time).all()
 
@@ -355,13 +356,14 @@ def get_watchlist_analytics():
 
         # 获取最新价格 - 使用子查询避免N+1问题（从 klines 表）
         # 子查询获取每个symbol_code的最新时间戳
+        # 注：股票K线目前只有30分钟数据，使用MINS_30
         subq = session.query(
             Kline.symbol_code,
             func.max(Kline.trade_time).label('max_ts')
         ).filter(
             Kline.symbol_code.in_(tickers),
             Kline.symbol_type == SymbolType.STOCK,
-            Kline.timeframe == KlineTimeframe.DAY
+            Kline.timeframe == KlineTimeframe.MINS_30
         ).group_by(Kline.symbol_code).subquery()
 
         # 主查询获取最新K线
@@ -373,7 +375,7 @@ def get_watchlist_analytics():
             )
         ).filter(
             Kline.symbol_type == SymbolType.STOCK,
-            Kline.timeframe == KlineTimeframe.DAY
+            Kline.timeframe == KlineTimeframe.MINS_30
         ).all()
 
         latest_prices = {k.symbol_code: float(k.close) for k in latest_klines if k.close}
