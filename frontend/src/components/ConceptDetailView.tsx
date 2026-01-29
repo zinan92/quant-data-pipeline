@@ -192,7 +192,6 @@ export function ConceptDetailView({ conceptName, conceptCode, maConfig, onMAConf
     peTtm: s.peTtm,
     pb: s.pb,
     listDate: null,
-    superCategory: null,
     concepts: [conceptName],
     introduction: null,
     mainBusiness: null,
