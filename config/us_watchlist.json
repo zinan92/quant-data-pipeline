@@ -1,0 +1,37 @@
+{
+  "指数": {
+    "^GSPC": "S&P 500",
+    "^IXIC": "纳斯达克",
+    "^DJI": "道琼斯",
+    "^VIX": "VIX恐慌指数"
+  },
+  "AI科技巨头": {
+    "NVDA": "NVIDIA",
+    "META": "Meta",
+    "GOOGL": "Google",
+    "MSFT": "Microsoft",
+    "AAPL": "Apple",
+    "AMZN": "Amazon"
+  },
+  "高成长": {
+    "TSLA": "Tesla",
+    "AMD": "AMD",
+    "AVGO": "Broadcom",
+    "CRM": "Salesforce"
+  },
+  "AI基建": {
+    "CRWV": "CoreWeave",
+    "OKLO": "Oklo"
+  },
+  "机器人": {
+    "RR": "Richtech Robotics"
+  },
+  "中概股": {
+    "BABA": "阿里巴巴",
+    "PDD": "拼多多",
+    "JD": "京东",
+    "BIDU": "百度",
+    "NIO": "蔚来",
+    "BYDDY": "比亚迪"
+  }
+}
