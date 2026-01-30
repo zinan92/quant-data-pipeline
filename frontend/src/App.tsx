@@ -151,20 +151,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 概念板块实时监控 - 仅在concepts视图显示 */}
-        {viewMode === "concepts" && (
-          <div className="concept-monitor-container">
-            <ConceptMonitorTable type="top" topN={20} />
-            <ConceptMonitorTable type="watch" />
-          </div>
-        )}
-
-        {/* 概念板块K线 - 仅在concepts视图显示 */}
-        {viewMode === "concepts" && (
-          <div className="dashboard dashboard--fullwidth">
-            <ConceptKlinePanel maConfig={maConfig} onConceptClick={handleConceptClick} />
-          </div>
-        )}
+        {/* 概念板块实时监控 + K线 — 暂时隐藏（缺少 hot_concept_categories.csv） */}
 
         {/* 内容区域 */}
         <div className="app__content">
