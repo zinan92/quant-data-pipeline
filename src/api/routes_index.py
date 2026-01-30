@@ -249,14 +249,22 @@ def get_index_name(ts_code: str) -> str:
 
 
 def ts_code_to_sina(ts_code: str) -> str:
-    """将Tushare代码转换为Sina代码格式"""
-    code, market = ts_code.split(".")
-    if market == "SH":
-        return f"sh{code}"
-    elif market == "SZ":
-        return f"sz{code}"
-    elif market == "BJ":
-        return f"bj{code}"
+    """将Tushare代码或Sina代码转换为Sina代码格式
+    
+    支持: 000001.SH → sh000001, sh000001 → sh000001
+    """
+    # Already in sina format (sh000001, sz399006, etc.)
+    if ts_code.startswith(("sh", "sz", "bj")):
+        return ts_code
+    # Tushare format (000001.SH)
+    if "." in ts_code:
+        code, market = ts_code.split(".")
+        if market == "SH":
+            return f"sh{code}"
+        elif market == "SZ":
+            return f"sz{code}"
+        elif market == "BJ":
+            return f"bj{code}"
     return ts_code
 
 

@@ -27,6 +27,8 @@ DATA_DIR = Path(__file__).parent.parent.parent / "data"
 def load_hot_concepts() -> pd.DataFrame:
     """加载热门概念分类"""
     file_path = DATA_DIR / "hot_concept_categories.csv"
+    if not file_path.exists():
+        return pd.DataFrame(columns=['概念名称', '大类', '股票数量'])
     return pd.read_csv(file_path)
 
 
@@ -34,6 +36,8 @@ def load_hot_concepts() -> pd.DataFrame:
 def load_concept_mapping() -> dict:
     """加载概念名称到板块代码的映射"""
     file_path = DATA_DIR / "concept_to_tickers.csv"
+    if not file_path.exists():
+        return {}
     df = pd.read_csv(file_path)
     mapping = {}
     for _, row in df.iterrows():

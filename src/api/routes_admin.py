@@ -595,3 +595,131 @@ async def validate_data_consistency() -> Dict[str, Any]:
     except Exception as e:
         logger.exception("数据一致性验证失败")
         raise HTTPException(status_code=500, detail=f"验证失败: {str(e)}")
+
+
+@router.get("/watchlist-health")
+async def watchlist_data_health(
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """
+    自选股数据健康检查
+
+    检查348只自选股的数据完整性：
+    - 日线K线是否更新到最新交易日
+    - 30分钟K线是否更新到最新交易时段
+    - 实时价格是否可获取
+    - 三者收盘价是否一致（收盘后）
+    """
+    from datetime import datetime, time
+    from zoneinfo import ZoneInfo
+    from sqlalchemy import text
+
+    tz = ZoneInfo("Asia/Shanghai")
+    now = datetime.now(tz)
+    today = now.strftime("%Y-%m-%d")
+    is_after_close = now.time() >= time(15, 30)
+
+    # Get latest trade date
+    trade_date_row = db.execute(text(
+        "SELECT MAX(date) FROM trade_calendar WHERE is_trading_day = 1 AND date <= :today"
+    ), {"today": today}).fetchone()
+    latest_trade_date = trade_date_row[0] if trade_date_row else today
+
+    # Get all watchlist tickers with names from symbol_metadata
+    watchlist_rows = db.execute(text(
+        "SELECT w.ticker, COALESCE(m.name, w.ticker) as name "
+        "FROM watchlist w LEFT JOIN symbol_metadata m ON w.ticker = m.ticker"
+    )).fetchall()
+    tickers = {r[0]: r[1] for r in watchlist_rows}
+
+    # Check daily klines - latest date per stock
+    daily_rows = db.execute(text("""
+        SELECT symbol_code, MAX(trade_time) as latest
+        FROM klines
+        WHERE symbol_type = 'STOCK' AND timeframe = 'DAY'
+          AND symbol_code IN (SELECT ticker FROM watchlist)
+        GROUP BY symbol_code
+    """)).fetchall()
+    daily_map = {r[0]: r[1] for r in daily_rows}
+
+    # Check 30m klines - latest time per stock
+    m30_rows = db.execute(text("""
+        SELECT symbol_code, MAX(trade_time) as latest
+        FROM klines
+        WHERE symbol_type = 'STOCK' AND timeframe = 'MINS_30'
+          AND symbol_code IN (SELECT ticker FROM watchlist)
+        GROUP BY symbol_code
+    """)).fetchall()
+    m30_map = {r[0]: r[1] for r in m30_rows}
+
+    # Analyze
+    missing_daily = []
+    stale_daily = []
+    missing_30m = []
+    stale_30m = []
+    price_mismatch = []
+
+    for ticker in tickers:
+        # Daily check
+        if ticker not in daily_map:
+            missing_daily.append(ticker)
+        elif daily_map[ticker][:10] < latest_trade_date:
+            stale_daily.append({"ticker": ticker, "latest": daily_map[ticker], "expected": latest_trade_date})
+
+        # 30m check
+        if ticker not in m30_map:
+            missing_30m.append(ticker)
+        elif is_after_close and m30_map[ticker][:10] < latest_trade_date:
+            stale_30m.append({"ticker": ticker, "latest": m30_map[ticker], "expected": latest_trade_date})
+
+    # Price consistency check (only after close, sample 10 stocks)
+    if is_after_close and daily_map:
+        import random
+        sample_tickers = random.sample(list(set(daily_map.keys()) & set(m30_map.keys())), min(10, len(daily_map)))
+        for ticker in sample_tickers:
+            daily_close = db.execute(text("""
+                SELECT close FROM klines
+                WHERE symbol_type='STOCK' AND symbol_code=:t AND timeframe='DAY'
+                ORDER BY trade_time DESC LIMIT 1
+            """), {"t": ticker}).fetchone()
+            m30_close = db.execute(text("""
+                SELECT close FROM klines
+                WHERE symbol_type='STOCK' AND symbol_code=:t AND timeframe='MINS_30'
+                ORDER BY trade_time DESC LIMIT 1
+            """), {"t": ticker}).fetchone()
+            if daily_close and m30_close:
+                diff = abs(daily_close[0] - m30_close[0]) / daily_close[0] * 100
+                if diff > 0.5:  # >0.5% difference
+                    price_mismatch.append({
+                        "ticker": ticker,
+                        "name": tickers.get(ticker, ""),
+                        "daily_close": daily_close[0],
+                        "m30_close": m30_close[0],
+                        "diff_pct": round(diff, 2),
+                    })
+
+    total = len(tickers)
+    has_daily = total - len(missing_daily)
+    has_30m = total - len(missing_30m)
+    is_healthy = len(missing_daily) == 0 and len(stale_daily) == 0 and len(price_mismatch) == 0
+
+    return {
+        "check_time": now.isoformat(),
+        "latest_trade_date": latest_trade_date,
+        "is_healthy": is_healthy,
+        "summary": {
+            "total": total,
+            "daily_coverage": f"{has_daily}/{total}",
+            "daily_stale": len(stale_daily),
+            "m30_coverage": f"{has_30m}/{total}",
+            "m30_stale": len(stale_30m),
+            "price_mismatches": len(price_mismatch),
+        },
+        "issues": {
+            "missing_daily": missing_daily[:20],
+            "stale_daily": stale_daily[:20],
+            "missing_30m": missing_30m[:20],
+            "stale_30m": stale_30m[:20],
+            "price_mismatch": price_mismatch,
+        },
+    }

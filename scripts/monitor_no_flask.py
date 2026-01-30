@@ -40,7 +40,7 @@ UPDATE_INTERVAL = 60  # 更新间隔（秒）
 TOP_N = 20  # 监控前N个板块
 
 # 输出目录
-OUTPUT_DIR = Path('/Users/park/a-share-data/docs/monitor')
+OUTPUT_DIR = Path(__file__).parent.parent / 'data' / 'monitor'
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 OUTPUT_FILE = OUTPUT_DIR / 'latest.json'

@@ -13,8 +13,9 @@ from datetime import datetime
 router = APIRouter()
 
 # JSON缓存文件路径
-CACHE_FILE = Path('/Users/park/a-share-data/docs/monitor/latest.json')
-SIGNALS_FILE = Path('/Users/park/a-share-data/docs/monitor/momentum_signals.json')
+DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+CACHE_FILE = DATA_DIR / "monitor" / "latest.json"
+SIGNALS_FILE = DATA_DIR / "monitor" / "momentum_signals.json"
 
 
 class ConceptData(BaseModel):
