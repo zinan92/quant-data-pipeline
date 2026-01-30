@@ -6,6 +6,7 @@ import { StockDetail } from "./components/StockDetail";
 import { IndexChart } from "./components/IndexChart";
 import { RefreshButton } from "./components/RefreshButton";
 import { SimulatedPortfolioView } from "./components/SimulatedPortfolioView";
+import { MomentumSignalsView } from "./components/MomentumSignalsView";
 import type { Timeframe } from "./types/timeframe";
 import type { MAConfig } from "./types/chartConfig";
 import { DEFAULT_MA_CONFIG } from "./types/chartConfig";
@@ -13,7 +14,7 @@ import { DEFAULT_MA_CONFIG } from "./types/chartConfig";
 const DEFAULT_KLINE_LIMIT = 120;
 const KLINE_LIMIT_KEY = "klineLimit";
 
-type ViewMode = "watchlist" | "stock" | "portfolio";
+type ViewMode = "watchlist" | "stock" | "portfolio" | "signals";
 
 export default function App() {
   const [viewMode, setViewMode] = useState<ViewMode>("watchlist");
@@ -79,6 +80,9 @@ export default function App() {
           {viewMode === "watchlist" && (
             <>
               <RefreshButton />
+              <button className="topbar__button topbar__button--warning" onClick={() => { pushHistory(); setViewMode("signals"); }}>
+                🔔 动量信号
+              </button>
               <button className="topbar__button topbar__button--secondary" onClick={handlePortfolioClick}>
                 持仓
               </button>
@@ -109,6 +113,9 @@ export default function App() {
           )}
           {viewMode === "portfolio" && (
             <SimulatedPortfolioView />
+          )}
+          {viewMode === "signals" && (
+            <MomentumSignalsView />
           )}
           {viewMode === "stock" && selectedStock && (
             <StockDetail
