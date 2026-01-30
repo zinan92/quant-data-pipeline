@@ -144,9 +144,9 @@ export default function App() {
         {viewMode === "concepts" && (
           <div className="dashboard dashboard--fullwidth">
             <div className="index-row">
-              <IndexChart tsCode="000001.SH" maConfig={maConfig} onMAConfigChange={setMAConfig} />
-              <IndexChart tsCode="399006.SZ" maConfig={maConfig} onMAConfigChange={setMAConfig} />
-              <IndexChart tsCode="000688.SH" maConfig={maConfig} onMAConfigChange={setMAConfig} />
+              <IndexChart key="000001.SH" tsCode="000001.SH" maConfig={maConfig} onMAConfigChange={setMAConfig} />
+              <IndexChart key="399006.SZ" tsCode="399006.SZ" maConfig={maConfig} onMAConfigChange={setMAConfig} />
+              <IndexChart key="000688.SH" tsCode="000688.SH" maConfig={maConfig} onMAConfigChange={setMAConfig} />
             </div>
           </div>
         )}
