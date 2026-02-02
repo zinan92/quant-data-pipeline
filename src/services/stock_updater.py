@@ -3,6 +3,7 @@
 从东方财富和新浪获取股票日线和30分钟数据
 """
 
+import asyncio
 import time
 from typing import TYPE_CHECKING
 
@@ -15,6 +16,9 @@ if TYPE_CHECKING:
     from src.repositories.symbol_repository import SymbolRepository
 
 logger = get_logger(__name__)
+
+# Circuit-breaker threshold — abort after this many consecutive None results
+CIRCUIT_BREAKER_THRESHOLD = 10
 
 
 class StockUpdater:
@@ -93,12 +97,15 @@ class StockUpdater:
         return total_updated
 
     async def update_watchlist_30m(self) -> int:
-        """更新自选股30分钟K线数据 (新浪财经)"""
+        """更新自选股30分钟K线数据 (新浪财经)
+
+        Runs the synchronous SinaKlineProvider in a thread so the event loop
+        stays responsive.  Includes a circuit-breaker: aborts if 10+
+        consecutive stocks return None (likely rate-limited).
+        """
         from src.services.sina_kline_provider import SinaKlineProvider
 
         logger.info("开始更新自选股30分钟数据...")
-        total_updated = 0
-        failed_count = 0
 
         tickers = self._get_watchlist_tickers()
         if not tickers:
@@ -109,12 +116,49 @@ class StockUpdater:
         provider = SinaKlineProvider(delay=0.5)
         kline_service = KlineService(self.kline_repo, self.symbol_repo)
 
+        # Offload the blocking loop to a thread
+        total_updated = await asyncio.to_thread(
+            self._sync_update_30m, tickers, provider, kline_service
+        )
+        return total_updated
+
+    def _sync_update_30m(
+        self,
+        tickers: list[str],
+        provider,
+        kline_service,
+    ) -> int:
+        """Synchronous inner loop for 30-min updates (runs in a thread)."""
+        total_updated = 0
+        failed_count = 0
+        consecutive_none = 0
+
         for i, ticker in enumerate(tickers):
+            # Circuit breaker
+            if consecutive_none >= CIRCUIT_BREAKER_THRESHOLD:
+                logger.warning(
+                    f"连续 {consecutive_none} 只股票返回空数据，"
+                    f"中止30分钟更新 (已处理 {i}/{len(tickers)})"
+                )
+                break
+
+            # Also honour the provider-level circuit breaker
+            if provider.consecutive_failures >= provider.max_consecutive_failures:
+                logger.warning(
+                    f"SinaKlineProvider 连续 {provider.consecutive_failures} 次请求失败，"
+                    f"中止30分钟更新 (已处理 {i}/{len(tickers)})"
+                )
+                break
+
             try:
                 df = provider.fetch_kline(ticker, period="30m", limit=500)
                 if df is None or df.empty:
-                    logger.debug(f"{ticker} 无30分钟数据")
+                    consecutive_none += 1
+                    logger.debug(f"{ticker} 无30分钟数据 (连续空: {consecutive_none})")
                     continue
+
+                # Got data — reset streak
+                consecutive_none = 0
 
                 klines = []
                 for _, row in df.iterrows():
@@ -242,6 +286,9 @@ class StockUpdater:
         更新单只股票的日线和30分钟数据
         用于添加自选股时立即获取数据
 
+        The Sina call is offloaded to a thread to avoid blocking the
+        event loop.
+
         Args:
             ticker: 股票代码 (6位)
 
@@ -281,10 +328,12 @@ class StockUpdater:
         except Exception as e:
             logger.warning(f"{ticker} 日线更新失败: {e}")
 
-        # 2. 更新30分钟 (新浪财经)
+        # 2. 更新30分钟 (新浪财经) — offload to thread
         try:
             sina = SinaKlineProvider()
-            mins30_df = sina.fetch_kline(ticker, period="30m", limit=80)
+            mins30_df = await asyncio.to_thread(
+                sina.fetch_kline, ticker, "30m", 80
+            )
 
             if mins30_df is not None and not mins30_df.empty:
                 if 'timestamp' in mins30_df.columns:

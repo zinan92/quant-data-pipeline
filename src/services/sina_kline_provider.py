@@ -11,6 +11,14 @@ import pandas as pd
 
 LOGGER = logging.getLogger(__name__)
 
+# Rate-limit status codes that trigger backoff
+RATE_LIMIT_CODES = {429, 456}
+
+
+class RateLimitError(Exception):
+    """Raised when the provider is rate-limited and aborts a batch."""
+    pass
+
 
 class SinaKlineProvider:
     """新浪财经K线数据提供者"""
@@ -26,21 +34,54 @@ class SinaKlineProvider:
         "day": 240,
     }
 
-    def __init__(self, delay: float = 3.0):
+    def __init__(
+        self,
+        delay: float = 3.0,
+        max_consecutive_failures: int = 5,
+        backoff_base: float = 5.0,
+        backoff_max: float = 60.0,
+    ):
         """
         初始化
 
         Args:
             delay: 请求间隔（秒），默认3秒（保守策略）
+            max_consecutive_failures: 连续失败多少次后中止批量请求
+            backoff_base: 指数退避基础秒数
+            backoff_max: 指数退避最大秒数
         """
         self.delay = delay
+        self.max_consecutive_failures = max_consecutive_failures
+        self.backoff_base = backoff_base
+        self.backoff_max = backoff_max
+
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             'Referer': 'https://finance.sina.com.cn/'
         })
         self._last_request_time = 0
-        LOGGER.info(f"SinaKlineProvider 初始化，请求间隔: {delay}秒")
+        self._consecutive_failures = 0
+        self._rate_limited = False
+        LOGGER.info(
+            f"SinaKlineProvider 初始化，请求间隔: {delay}秒, "
+            f"最大连续失败: {max_consecutive_failures}"
+        )
+
+    @property
+    def consecutive_failures(self) -> int:
+        """Current consecutive failure count (read-only)."""
+        return self._consecutive_failures
+
+    @property
+    def rate_limited(self) -> bool:
+        """Whether the provider is currently in rate-limited state."""
+        return self._rate_limited
+
+    def reset(self):
+        """Reset failure / rate-limit state (e.g. for a new batch)."""
+        self._consecutive_failures = 0
+        self._rate_limited = False
 
     def _wait_for_rate_limit(self):
         """等待以满足频率限制"""
@@ -49,6 +90,16 @@ class SinaKlineProvider:
             sleep_time = self.delay - elapsed
             time.sleep(sleep_time)
         self._last_request_time = time.time()
+
+    def _backoff_sleep(self):
+        """Exponential backoff based on consecutive failure count."""
+        exponent = max(0, self._consecutive_failures - 1)
+        sleep_secs = min(self.backoff_base * (2 ** exponent), self.backoff_max)
+        LOGGER.warning(
+            f"Rate-limited — backing off {sleep_secs:.1f}s "
+            f"(consecutive failures: {self._consecutive_failures})"
+        )
+        time.sleep(sleep_secs)
 
     def _convert_ticker(self, ticker: str) -> str:
         """
@@ -102,7 +153,23 @@ class SinaKlineProvider:
             }
 
             response = self.session.get(self.BASE_URL, params=params, timeout=10)
+
+            # --- rate-limit detection ---
+            if response.status_code in RATE_LIMIT_CODES:
+                self._consecutive_failures += 1
+                self._rate_limited = True
+                LOGGER.warning(
+                    f"{ticker} 被限流 (HTTP {response.status_code})，"
+                    f"连续失败: {self._consecutive_failures}"
+                )
+                self._backoff_sleep()
+                return None
+
             response.raise_for_status()
+
+            # Success — reset streak
+            self._consecutive_failures = 0
+            self._rate_limited = False
 
             # 解析JSON响应
             data = response.json()
@@ -137,10 +204,18 @@ class SinaKlineProvider:
             return df
 
         except requests.exceptions.RequestException as e:
-            LOGGER.warning(f"{ticker} 请求失败: {e}")
+            self._consecutive_failures += 1
+            LOGGER.warning(
+                f"{ticker} 请求失败: {e} "
+                f"(连续失败: {self._consecutive_failures})"
+            )
             return None
         except Exception as e:
-            LOGGER.warning(f"{ticker} 解析失败: {e}")
+            self._consecutive_failures += 1
+            LOGGER.warning(
+                f"{ticker} 解析失败: {e} "
+                f"(连续失败: {self._consecutive_failures})"
+            )
             return None
 
     def fetch_batch(
@@ -152,6 +227,9 @@ class SinaKlineProvider:
     ) -> pd.DataFrame:
         """
         批量获取多只股票的K线数据
+
+        Aborts early when *max_consecutive_failures* successive requests fail
+        (e.g. due to 456 rate-limiting), to avoid blocking for minutes.
 
         Args:
             tickers: 股票代码列表
@@ -165,9 +243,20 @@ class SinaKlineProvider:
         all_data = []
         total = len(tickers)
 
+        # Reset state for a fresh batch
+        self.reset()
+
         LOGGER.info(f"开始批量获取 {total} 只股票的 {period} K线")
 
         for i, ticker in enumerate(tickers):
+            # --- circuit breaker ---
+            if self._consecutive_failures >= self.max_consecutive_failures:
+                LOGGER.warning(
+                    f"连续 {self._consecutive_failures} 次请求失败，"
+                    f"中止批量获取 (已完成 {i}/{total})"
+                )
+                break
+
             df = self.fetch_kline(ticker, period, limit)
             if df is not None and not df.empty:
                 all_data.append(df)
