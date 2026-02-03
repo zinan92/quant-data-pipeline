@@ -113,7 +113,7 @@ class KlineScheduler:
     # ==================== 任务函数 ====================
 
     async def _job_daily_update(self):
-        """每日更新任务 (15:30 执行)"""
+        """每日更新任务 (16:00 执行，给新浪API足够时间合并日线数据)"""
         if not self.is_trading_day():
             logger.info("非交易日，跳过日线更新")
             return
@@ -246,10 +246,10 @@ class KlineScheduler:
 
         logger.info("正在启动K线数据调度器...")
 
-        # 1. 每日更新任务 (交易日 15:30)
+        # 1. 每日更新任务 (交易日 16:00, 给新浪API足够时间合并日线)
         self.scheduler.add_job(
             self._job_daily_update,
-            CronTrigger(hour=15, minute=30),
+            CronTrigger(hour=16, minute=0),
             id="daily_update",
             name="每日K线更新",
             replace_existing=True,
