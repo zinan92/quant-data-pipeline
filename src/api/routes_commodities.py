@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+import yfinance as yf
+
 from src.utils.logging import get_logger
 
 router = APIRouter()
@@ -117,3 +119,50 @@ async def get_commodities_realtime():
     except Exception as e:
         logger.exception("Failed to fetch commodities data")
         raise HTTPException(status_code=500, detail=f"获取大宗商品数据失败: {str(e)}")
+
+
+@router.get("/klines/{symbol}")
+async def get_commodity_klines(
+    symbol: str,
+    period: str = Query("3mo", description="Period: 1mo, 3mo, 6mo, 1y"),
+    interval: str = Query("1d", description="Interval: 1d, 1h, 30m, 5m"),
+):
+    """Get historical klines for a commodity using yfinance"""
+    VALID_SYMBOLS = {"GC=F": "Gold", "SI=F": "Silver", "HG=F": "Copper", "CL=F": "Crude Oil"}
+    if symbol not in VALID_SYMBOLS:
+        raise HTTPException(status_code=404, detail=f"Unknown symbol: {symbol}")
+
+    # For intraday, yfinance needs shorter period
+    if interval in ("5m", "30m", "1h"):
+        period = "60d"
+
+    try:
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(period=period, interval=interval)
+        if df.empty:
+            raise HTTPException(status_code=404, detail="No data available")
+
+        klines = []
+        for idx, row in df.iterrows():
+            date_str = idx.strftime("%Y-%m-%d") if interval == "1d" else idx.strftime("%Y-%m-%dT%H:%M:%S")
+            klines.append({
+                "date": date_str,
+                "open": round(float(row["Open"]), 4),
+                "high": round(float(row["High"]), 4),
+                "low": round(float(row["Low"]), 4),
+                "close": round(float(row["Close"]), 4),
+                "volume": int(row["Volume"]),
+            })
+
+        return {
+            "symbol": symbol,
+            "name": VALID_SYMBOLS[symbol],
+            "interval": interval,
+            "count": len(klines),
+            "klines": klines,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to fetch klines for {symbol}")
+        raise HTTPException(status_code=500, detail=str(e))

@@ -3,7 +3,10 @@
  * All-in-one market overview with real-time auto-refresh
  */
 import { useDashboardData } from "../hooks/useDashboardData";
+import { useDashboardKlines, ASSETS, TIMEFRAMES } from "../hooks/useDashboardKlines";
+import type { Asset } from "../hooks/useDashboardKlines";
 import type { AssetCardData } from "../types/dashboard";
+import { KlineChart } from "./charts/KlineChart";
 import "./MultiAssetDashboard.css";
 
 // ─── Mini Sparkline SVG ───
@@ -117,6 +120,86 @@ function DashboardSection({
 
 // ─── Main Dashboard ───
 
+// ─── K-line Section ───
+
+function KlineSection() {
+  const {
+    selectedAsset,
+    selectedTimeframe,
+    klineData,
+    loading: klineLoading,
+    error: klineError,
+    setAsset,
+    setTimeframe,
+  } = useDashboardKlines();
+
+  const renderAssetGroup = (assets: Asset[], label: string) => (
+    <span className="dashboard-asset-group">
+      {assets.map((asset) => (
+        <button
+          key={asset.id}
+          className={`dashboard-asset-btn ${selectedAsset.id === asset.id ? "dashboard-asset-btn--active" : ""}`}
+          onClick={() => setAsset(asset)}
+        >
+          {asset.name}
+        </button>
+      ))}
+    </span>
+  );
+
+  return (
+    <section className="dashboard-kline-section">
+      <h2 className="dashboard-section__title">
+        <span className="dashboard-section__emoji">📈</span>
+        K线图
+      </h2>
+
+      <div className="dashboard-asset-selector">
+        {renderAssetGroup(ASSETS.indexes, "A-Shares")}
+        <span className="dashboard-asset-separator">|</span>
+        {renderAssetGroup(ASSETS.commodities, "Commodities")}
+        <span className="dashboard-asset-separator">|</span>
+        {renderAssetGroup(ASSETS.crypto, "Crypto")}
+      </div>
+
+      <div className="dashboard-timeframe-tabs">
+        {TIMEFRAMES.map((tf) => (
+          <button
+            key={tf.id}
+            className={`dashboard-tf-btn ${selectedTimeframe === tf.id ? "dashboard-tf-btn--active" : ""}`}
+            onClick={() => setTimeframe(tf.id)}
+          >
+            {tf.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="dashboard-kline-chart-wrapper">
+        {klineLoading && klineData.length === 0 && (
+          <div className="dashboard-kline-loading">加载中…</div>
+        )}
+        {klineError && (
+          <div className="dashboard-kline-error">⚠️ {klineError}</div>
+        )}
+        {klineData.length > 0 && (
+          <KlineChart
+            data={klineData}
+            height={500}
+            showVolume={true}
+            showMACD={true}
+            title={`${selectedAsset.name} — ${TIMEFRAMES.find((t) => t.id === selectedTimeframe)?.label || ""}`}
+          />
+        )}
+        {!klineLoading && !klineError && klineData.length === 0 && (
+          <div className="dashboard-kline-empty">暂无数据</div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// ─── Main Dashboard ───
+
 export function MultiAssetDashboard() {
   const { indexes, commodities, crypto, loading, error, lastUpdate, refetch } =
     useDashboardData();
@@ -162,6 +245,8 @@ export function MultiAssetDashboard() {
         assets={crypto}
         showHiLo={true}
       />
+
+      <KlineSection />
     </div>
   );
 }
