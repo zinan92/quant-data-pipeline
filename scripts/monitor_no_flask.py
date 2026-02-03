@@ -59,6 +59,75 @@ WATCH_NAMES: List[str] = [
 ]
 
 
+def _fetch_limit_counts(client: TushareClient) -> Dict[str, Dict]:
+    """Fetch limit-up/down counts per industry from limit_list_d."""
+    import tushare as ts
+    pro = ts.pro_api(client.token)
+    
+    result = {}
+    trade_date = datetime.now().strftime("%Y%m%d")
+    
+    try:
+        # Limit up
+        df_up = pro.limit_list_d(trade_date=trade_date, limit_type='U')
+        if not df_up.empty:
+            counts = df_up.groupby('industry').size()
+            for ind, cnt in counts.items():
+                result.setdefault(ind, {})["limitUp"] = int(cnt)
+        
+        # Limit down
+        df_down = pro.limit_list_d(trade_date=trade_date, limit_type='D')
+        if not df_down.empty:
+            counts = df_down.groupby('industry').size()
+            for ind, cnt in counts.items():
+                result.setdefault(ind, {})["limitDown"] = int(cnt)
+    except Exception as e:
+        print(f"  ⚠️ 获取涨跌停数据失败: {e}")
+    
+    return result
+
+
+def _fetch_up_down_counts(client: TushareClient, industry_names: List[str], moneyflow_df: pd.DataFrame) -> Dict[str, Dict]:
+    """Fetch up/down stock counts per industry using daily data."""
+    import tushare as ts
+    pro = ts.pro_api(client.token)
+    
+    trade_date = datetime.now().strftime("%Y%m%d")
+    result = {}
+    
+    # Get all A-share daily data for today in one call
+    try:
+        df = pro.daily(trade_date=trade_date)
+        if df.empty:
+            return result
+        
+        # Get industry mapping for each stock via ths_member
+        for _, row in moneyflow_df.iterrows():
+            ts_code = row.get("ts_code", "")
+            name = row.get("industry", "")
+            if name not in industry_names:
+                continue
+            
+            try:
+                members = pro.ths_member(ts_code=ts_code)
+                if members.empty:
+                    continue
+                
+                member_codes = set(members["con_code"].tolist())
+                matched = df[df["ts_code"].isin(member_codes)]
+                
+                up_count = int((matched["pct_chg"] > 0).sum())
+                down_count = int((matched["pct_chg"] < 0).sum())
+                
+                result[name] = {"upCount": up_count, "downCount": down_count}
+            except Exception:
+                continue
+    except Exception as e:
+        print(f"  ⚠️ 获取涨跌数统计失败: {e}")
+    
+    return result
+
+
 def _fetch_historical_changes(client: TushareClient, ts_codes: List[str]) -> Dict[str, Dict]:
     """Fetch 5d/10d/20d historical changes and volume via ths_daily."""
     import tushare as ts
@@ -95,7 +164,8 @@ def _fetch_historical_changes(client: TushareClient, ts_codes: List[str]) -> Dic
     return result
 
 
-def _row_to_concept_dict(row: pd.Series, rank: int, hist: Dict = None) -> Dict:
+def _row_to_concept_dict(row: pd.Series, rank: int, hist: Dict = None, 
+                         limit_counts: Dict = None, up_down: Dict = None) -> Dict:
     """将 moneyflow DataFrame 行转为前端格式 dict。"""
 
     pct_change = float(row.get("pct_change", 0) or 0)
@@ -105,21 +175,26 @@ def _row_to_concept_dict(row: pd.Series, rank: int, hist: Dict = None) -> Dict:
     net_buy = float(row.get("net_buy_amount", 0) or 0)
     net_sell = float(row.get("net_sell_amount", 0) or 0)
     ts_code = row.get("ts_code", "")
+    name = row.get("industry", row.get("name", ""))
     
-    # Historical data if available
+    # Historical data
     h = (hist or {}).get(ts_code, {})
+    # Limit up/down counts
+    lc = (limit_counts or {}).get(name, {})
+    # Up/down stock counts
+    ud = (up_down or {}).get(name, {})
 
     return {
         "rank": rank,
-        "name": row.get("industry", row.get("name", "")),
+        "name": name,
         "code": ts_code,
         "changePct": round(pct_change, 2),
         "changeValue": round(close, 2),
         "moneyInflow": round(net_amount, 2),
         "volumeRatio": 0,
-        "upCount": 0,
-        "downCount": 0,
-        "limitUp": 0,
+        "upCount": ud.get("upCount", 0),
+        "downCount": ud.get("downCount", 0),
+        "limitUp": lc.get("limitUp", 0),
         "totalStocks": company_num,
         "turnover": round(net_buy + net_sell, 2),
         "volume": h.get("volume", 0),
@@ -146,27 +221,38 @@ def update_data(service: TonghuashunService) -> None:
 
     print(f"  ✓ 获取到 {len(df)} 个行业板块")
 
-    # 1.5. 获取历史涨跌数据（5日/10日/20日 + 成交量）
-    print("\n[1.5/3] 获取历史涨跌数据...")
+    # 1.5. 获取涨跌停统计
+    print("\n[1.5/4] 获取涨跌停统计...")
+    limit_counts = _fetch_limit_counts(service._client)
+    print(f"  ✓ 获取到 {len(limit_counts)} 个行业的涨跌停数据")
+
+    # 1.6. 获取历史涨跌数据（5日/10日/20日 + 成交量）
+    print("\n[1.6/4] 获取历史涨跌数据...")
     all_codes = df["ts_code"].tolist()
     hist = _fetch_historical_changes(service._client, all_codes[:TOP_N + len(WATCH_NAMES)])
     print(f"  ✓ 获取到 {len(hist)} 个板块的历史数据")
 
+    # 1.7. 获取涨跌家数（TOP20 + 自选）
+    print("\n[1.7/4] 获取行业涨跌家数...")
+    target_names = list(set([r["industry"] for _, r in df.head(TOP_N).iterrows()] + WATCH_NAMES))
+    up_down = _fetch_up_down_counts(service._client, target_names, df)
+    print(f"  ✓ 获取到 {len(up_down)} 个行业的涨跌家数")
+
     # 2. 构建 topConcepts（涨幅前 TOP_N）
-    print(f"\n[2/3] 构建涨幅 TOP{TOP_N}...")
+    print(f"\n[2/4] 构建涨幅 TOP{TOP_N}...")
     df_top = df.head(TOP_N)
     top_data = []
     for idx, (_, row) in enumerate(df_top.iterrows(), start=1):
-        top_data.append(_row_to_concept_dict(row, idx, hist))
+        top_data.append(_row_to_concept_dict(row, idx, hist, limit_counts, up_down))
 
     # 3. 构建 watchConcepts（自选热门）
-    print(f"\n[3/3] 构建自选热门概念...")
+    print(f"\n[3/4] 构建自选热门概念...")
     watch_data = []
     for watch_name in WATCH_NAMES:
         matched = df[df["industry"] == watch_name]
         if not matched.empty:
             row = matched.iloc[0]
-            watch_data.append(_row_to_concept_dict(row, len(watch_data) + 1, hist))
+            watch_data.append(_row_to_concept_dict(row, len(watch_data) + 1, hist, limit_counts, up_down))
         else:
             print(f"  ⚠️  自选概念 '{watch_name}' 未在行业数据中找到")
 
