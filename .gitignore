@@ -33,6 +33,12 @@ docs/monitor/*.json
 *.csv
 *.parquet
 
+# Exception: Allow sectors (tracks) to be synced
+!data/sectors/
+!data/sectors/*.csv
+!data/sectors/*.json
+!data/sectors/*.py
+
 # IDE
 .vscode/
 .idea/
