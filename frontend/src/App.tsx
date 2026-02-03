@@ -9,6 +9,7 @@ import { SimulatedPortfolioView } from "./components/SimulatedPortfolioView";
 import { MomentumSignalsView } from "./components/MomentumSignalsView";
 import { ConceptMonitorTable } from "./components/ConceptMonitorTable";
 import { ConceptKlinePanel } from "./components/ConceptKlinePanel";
+import { MultiAssetDashboard } from "./components/MultiAssetDashboard";
 import type { MAConfig } from "./types/chartConfig";
 import { DEFAULT_MA_CONFIG } from "./types/chartConfig";
 
@@ -61,6 +62,12 @@ function AppShell() {
             onClick={() => navigate("/portfolio")}
           >
             持仓
+          </button>
+          <button
+            className={`topbar__button ${currentPath === "/dashboard" ? "topbar__button--primary" : "topbar__button--secondary"}`}
+            onClick={() => navigate("/dashboard")}
+          >
+            🌍 Dashboard
           </button>
           <button
             className={`topbar__button ${currentPath === "/" ? "topbar__button--primary" : "topbar__button--secondary"}`}
@@ -134,6 +141,13 @@ function AppShell() {
           <Route path="/signals" element={
             <div className="app__content">
               <MomentumSignalsView />
+            </div>
+          } />
+
+          {/* Multi-Asset Dashboard */}
+          <Route path="/dashboard" element={
+            <div className="app__content">
+              <MultiAssetDashboard />
             </div>
           } />
         </Routes>
