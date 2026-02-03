@@ -59,12 +59,44 @@ WATCH_NAMES: List[str] = [
 ]
 
 
-def _row_to_concept_dict(row: pd.Series, rank: int) -> Dict:
-    """将 moneyflow DataFrame 行转为前端格式 dict。"""
+def _fetch_historical_changes(client: TushareClient, ts_codes: List[str]) -> Dict[str, Dict]:
+    """Fetch 5d/10d/20d historical changes and volume via ths_daily."""
+    import tushare as ts
+    pro = ts.pro_api(client.token)
+    
+    result = {}
+    for code in ts_codes:
+        try:
+            df = pro.ths_daily(ts_code=code, start_date='20260101', end_date='20260203')
+            if df.empty or len(df) < 2:
+                continue
+            
+            today_close = df.iloc[0]["close"]
+            today_vol = float(df.iloc[0].get("vol", 0) or 0)
+            
+            # Calculate N-day changes
+            day5 = day10 = day20 = 0.0
+            if len(df) >= 6:
+                day5 = round((today_close - df.iloc[5]["close"]) / df.iloc[5]["close"] * 100, 2)
+            if len(df) >= 11:
+                day10 = round((today_close - df.iloc[10]["close"]) / df.iloc[10]["close"] * 100, 2)
+            if len(df) >= 21:
+                day20 = round((today_close - df.iloc[20]["close"]) / df.iloc[20]["close"] * 100, 2)
+            
+            result[code] = {
+                "day5Change": day5,
+                "day10Change": day10,
+                "day20Change": day20,
+                "volume": round(today_vol / 10000, 2),  # 转万手
+            }
+        except Exception:
+            continue
+    
+    return result
 
-    # pct_change_stock = 领涨股涨幅
-    # net_amount = 净流入（亿元）
-    # company_num = 成分股数量
+
+def _row_to_concept_dict(row: pd.Series, rank: int, hist: Dict = None) -> Dict:
+    """将 moneyflow DataFrame 行转为前端格式 dict。"""
 
     pct_change = float(row.get("pct_change", 0) or 0)
     net_amount = float(row.get("net_amount", 0) or 0)
@@ -72,24 +104,28 @@ def _row_to_concept_dict(row: pd.Series, rank: int) -> Dict:
     close = float(row.get("close", 0) or 0)
     net_buy = float(row.get("net_buy_amount", 0) or 0)
     net_sell = float(row.get("net_sell_amount", 0) or 0)
+    ts_code = row.get("ts_code", "")
+    
+    # Historical data if available
+    h = (hist or {}).get(ts_code, {})
 
     return {
         "rank": rank,
         "name": row.get("industry", row.get("name", "")),
-        "code": row.get("ts_code", ""),
+        "code": ts_code,
         "changePct": round(pct_change, 2),
         "changeValue": round(close, 2),
         "moneyInflow": round(net_amount, 2),
-        "volumeRatio": 0,  # 行业资金流向接口无此字段
-        "upCount": 0,  # 单独接口无法获取，置 0
+        "volumeRatio": 0,
+        "upCount": 0,
         "downCount": 0,
         "limitUp": 0,
         "totalStocks": company_num,
-        "turnover": round(net_buy + net_sell, 2),  # 近似成交额（买+卖）
-        "volume": 0,  # 无成交量数据
-        "day5Change": 0,
-        "day10Change": 0,
-        "day20Change": 0,
+        "turnover": round(net_buy + net_sell, 2),
+        "volume": h.get("volume", 0),
+        "day5Change": h.get("day5Change", 0),
+        "day10Change": h.get("day10Change", 0),
+        "day20Change": h.get("day20Change", 0),
     }
 
 
@@ -110,12 +146,18 @@ def update_data(service: TonghuashunService) -> None:
 
     print(f"  ✓ 获取到 {len(df)} 个行业板块")
 
+    # 1.5. 获取历史涨跌数据（5日/10日/20日 + 成交量）
+    print("\n[1.5/3] 获取历史涨跌数据...")
+    all_codes = df["ts_code"].tolist()
+    hist = _fetch_historical_changes(service._client, all_codes[:TOP_N + len(WATCH_NAMES)])
+    print(f"  ✓ 获取到 {len(hist)} 个板块的历史数据")
+
     # 2. 构建 topConcepts（涨幅前 TOP_N）
     print(f"\n[2/3] 构建涨幅 TOP{TOP_N}...")
     df_top = df.head(TOP_N)
     top_data = []
     for idx, (_, row) in enumerate(df_top.iterrows(), start=1):
-        top_data.append(_row_to_concept_dict(row, idx))
+        top_data.append(_row_to_concept_dict(row, idx, hist))
 
     # 3. 构建 watchConcepts（自选热门）
     print(f"\n[3/3] 构建自选热门概念...")
@@ -124,7 +166,7 @@ def update_data(service: TonghuashunService) -> None:
         matched = df[df["industry"] == watch_name]
         if not matched.empty:
             row = matched.iloc[0]
-            watch_data.append(_row_to_concept_dict(row, len(watch_data) + 1))
+            watch_data.append(_row_to_concept_dict(row, len(watch_data) + 1, hist))
         else:
             print(f"  ⚠️  自选概念 '{watch_name}' 未在行业数据中找到")
 
