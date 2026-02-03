@@ -6,6 +6,7 @@ export interface ConceptData {
   rank: number;
   name: string;
   code: string;
+  boardType?: string;  // "行业" or "概念"
   changePct: number;
   changeValue: number;
   mainVolume: number | null;  // Optional field

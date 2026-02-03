@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-板块监控 — 同花顺数据源版本
-使用 TuShare Pro 的同花顺行业资金流向接口获取板块涨跌数据。
+板块监控 — 同花顺数据源版本 (混排: 90行业 + ~390概念)
+使用 TuShare Pro 的 ths_daily 获取所有板块涨跌数据，
+moneyflow_ind_ths 补充90个行业的资金流向。
 定时更新数据到 data/monitor/latest.json，前端 API 直接读取。
 """
 
@@ -12,18 +13,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import json
+import re
 import time
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Optional, Set
 
 import pandas as pd
 
 from src.config import get_settings
 from src.services.tushare_client import TushareClient
-from src.services.tonghuashun_service import (
-    TonghuashunService,
-    CATEGORY_TO_THS_CONCEPTS,
-)
+from src.services.tonghuashun_service import TonghuashunService
 
 # ── 配置 ──
 UPDATE_INTERVAL = 300  # 更新间隔（秒）— 同花顺数据非实时，5分钟足够
@@ -32,50 +31,120 @@ TOP_N = 20  # 监控前 N 个板块
 # 输出目录
 OUTPUT_DIR = Path(__file__).parent.parent / "data" / "monitor"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
 OUTPUT_FILE = OUTPUT_DIR / "latest.json"
 
-# ── 自选热门概念名称（从 CATEGORY_TO_THS_CONCEPTS 汇总） ──
-# 取每个赛道最核心的概念名称，确保与行业资金流向数据能匹配
+# ── 自选热门（行业 + 概念混排） ──
 WATCH_NAMES: List[str] = [
-    "光伏设备",
-    "半导体",
-    "小金属",
-    "通信设备",
-    "电力",
-    "汽车零部件",
-    "消费电子",
-    "计算机设备",
-    "化学制药",
-    "军工电子",
-    "电池",
-    "贵金属",
-    "电网设备",
-    "白酒",
-    "游戏",
-    "自动化设备",
-    "软件开发",
-    "能源金属",
+    # 行业
+    "光伏设备", "半导体", "电池", "贵金属", "白酒", "军工电子",
+    "通信设备", "消费电子", "自动化设备", "软件开发", "能源金属",
+    # 概念
+    "人形机器人", "AI应用", "光刻机", "BC电池", "钙钛矿电池",
+    "稀土永磁", "智能电网", "芯片概念",
 ]
 
 
-def _fetch_limit_counts(client: TushareClient) -> Dict[str, Dict]:
-    """Fetch limit-up/down counts per industry from limit_list_d."""
+# ── 板块代码前缀 ──
+_INDUSTRY_PREFIX = "881"
+_CONCEPT_PREFIXES = ("885", "886")
+_ALL_PREFIXES_RE = re.compile(r"^(881|885|886)")
+
+
+def _build_name_map(client: TushareClient) -> Dict[str, str]:
+    """Build ts_code → name mapping from ths_index (industry + concept)."""
     import tushare as ts
     pro = ts.pro_api(client.token)
-    
-    result = {}
-    trade_date = datetime.now().strftime("%Y%m%d")
-    
+    name_map: Dict[str, str] = {}
+
     try:
-        # Limit up
+        df_i = pro.ths_index(exchange='A', type='I')  # 行业
+        if not df_i.empty:
+            name_map.update(dict(zip(df_i['ts_code'], df_i['name'])))
+            print(f"  ✓ 行业指数名称: {len(df_i)} 条")
+        time.sleep(0.3)
+
+        df_n = pro.ths_index(exchange='A', type='N')  # 概念
+        if not df_n.empty:
+            name_map.update(dict(zip(df_n['ts_code'], df_n['name'])))
+            print(f"  ✓ 概念指数名称: {len(df_n)} 条")
+    except Exception as e:
+        print(f"  ⚠️ 获取名称映射失败: {e}")
+
+    return name_map
+
+
+def _fetch_mixed_daily(client: TushareClient, trade_date: str, name_map: Dict[str, str]) -> pd.DataFrame:
+    """Fetch ths_daily for the given date, filter to 881/885/886, add name & board_type."""
+    import tushare as ts
+    pro = ts.pro_api(client.token)
+
+    try:
+        df = pro.ths_daily(trade_date=trade_date)
+    except Exception as e:
+        print(f"  ⚠️ ths_daily 获取失败: {e}")
+        return pd.DataFrame()
+
+    if df.empty:
+        return pd.DataFrame()
+
+    # Filter to industry + concept codes
+    mask = df['ts_code'].str.match(_ALL_PREFIXES_RE)
+    df = df[mask].copy()
+
+    # Add name and board_type
+    df['name'] = df['ts_code'].map(name_map)
+    df['board_type'] = df['ts_code'].apply(
+        lambda x: '行业' if x.startswith(_INDUSTRY_PREFIX) else '概念'
+    )
+
+    # Drop rows with no name mapping
+    df = df.dropna(subset=['name'])
+
+    # Sort by pct_change descending
+    df = df.sort_values('pct_change', ascending=False).reset_index(drop=True)
+    return df
+
+
+def _fetch_moneyflow_map(client: TushareClient, trade_date: str) -> Dict[str, Dict]:
+    """Fetch moneyflow for 90 industries, return {ts_code: {net_amount, turnover, company_num, ...}}."""
+    try:
+        df = client.fetch_ths_industry_moneyflow(trade_date=trade_date)
+    except Exception as e:
+        print(f"  ⚠️ moneyflow 获取失败: {e}")
+        return {}
+
+    if df.empty:
+        return {}
+
+    result: Dict[str, Dict] = {}
+    for _, row in df.iterrows():
+        ts_code = row.get("ts_code", "")
+        net_buy = float(row.get("net_buy_amount", 0) or 0)
+        net_sell = float(row.get("net_sell_amount", 0) or 0)
+        result[ts_code] = {
+            "net_amount": float(row.get("net_amount", 0) or 0),
+            "turnover": round(net_buy + net_sell, 2),
+            "company_num": int(row.get("company_num", 0) or 0),
+            "lead_stock": row.get("lead_stock", ""),
+        }
+    return result
+
+
+def _fetch_limit_counts(client: TushareClient, trade_date: str) -> Dict[str, Dict]:
+    """Fetch limit-up/down counts per industry name from limit_list_d."""
+    import tushare as ts
+    pro = ts.pro_api(client.token)
+
+    result: Dict[str, Dict] = {}
+    try:
         df_up = pro.limit_list_d(trade_date=trade_date, limit_type='U')
         if not df_up.empty:
             counts = df_up.groupby('industry').size()
             for ind, cnt in counts.items():
                 result.setdefault(ind, {})["limitUp"] = int(cnt)
-        
-        # Limit down
+
+        time.sleep(0.3)
+
         df_down = pro.limit_list_d(trade_date=trade_date, limit_type='D')
         if not df_down.empty:
             counts = df_down.groupby('industry').size()
@@ -83,48 +152,43 @@ def _fetch_limit_counts(client: TushareClient) -> Dict[str, Dict]:
                 result.setdefault(ind, {})["limitDown"] = int(cnt)
     except Exception as e:
         print(f"  ⚠️ 获取涨跌停数据失败: {e}")
-    
+
     return result
 
 
-def _fetch_up_down_counts(client: TushareClient, industry_names: List[str], moneyflow_df: pd.DataFrame) -> Dict[str, Dict]:
-    """Fetch up/down stock counts per industry using daily data."""
+def _fetch_up_down_counts(client: TushareClient, ts_codes: List[str], trade_date: str) -> Dict[str, Dict]:
+    """Fetch up/down stock counts for given board ts_codes via ths_member + daily."""
     import tushare as ts
     pro = ts.pro_api(client.token)
-    
-    trade_date = datetime.now().strftime("%Y%m%d")
-    result = {}
-    
+
+    result: Dict[str, Dict] = {}
+
     # Get all A-share daily data for today in one call
     try:
-        df = pro.daily(trade_date=trade_date)
-        if df.empty:
+        df_daily = pro.daily(trade_date=trade_date)
+        if df_daily.empty:
             return result
-        
-        # Get industry mapping for each stock via ths_member
-        for _, row in moneyflow_df.iterrows():
-            ts_code = row.get("ts_code", "")
-            name = row.get("industry", "")
-            if name not in industry_names:
-                continue
-            
-            try:
-                members = pro.ths_member(ts_code=ts_code)
-                if members.empty:
-                    continue
-                
-                member_codes = set(members["con_code"].tolist())
-                matched = df[df["ts_code"].isin(member_codes)]
-                
-                up_count = int((matched["pct_chg"] > 0).sum())
-                down_count = int((matched["pct_chg"] < 0).sum())
-                
-                result[name] = {"upCount": up_count, "downCount": down_count}
-            except Exception:
-                continue
     except Exception as e:
-        print(f"  ⚠️ 获取涨跌数统计失败: {e}")
-    
+        print(f"  ⚠️ 获取日线数据失败: {e}")
+        return result
+
+    for code in ts_codes:
+        try:
+            members = pro.ths_member(ts_code=code)
+            time.sleep(0.3)
+            if members.empty:
+                continue
+
+            member_codes = set(members["con_code"].tolist())
+            matched = df_daily[df_daily["ts_code"].isin(member_codes)]
+
+            up_count = int((matched["pct_chg"] > 0).sum())
+            down_count = int((matched["pct_chg"] < 0).sum())
+
+            result[code] = {"upCount": up_count, "downCount": down_count}
+        except Exception:
+            continue
+
     return result
 
 
@@ -132,18 +196,18 @@ def _fetch_historical_changes(client: TushareClient, ts_codes: List[str]) -> Dic
     """Fetch 5d/10d/20d historical changes and volume via ths_daily."""
     import tushare as ts
     pro = ts.pro_api(client.token)
-    
-    result = {}
+
+    result: Dict[str, Dict] = {}
     for code in ts_codes:
         try:
-            df = pro.ths_daily(ts_code=code, start_date='20260101', end_date='20260203')
+            df = pro.ths_daily(ts_code=code, start_date='20260101', end_date='20260630')
+            time.sleep(0.3)
             if df.empty or len(df) < 2:
                 continue
-            
+
             today_close = df.iloc[0]["close"]
             today_vol = float(df.iloc[0].get("vol", 0) or 0)
-            
-            # Calculate N-day changes
+
             day5 = day10 = day20 = 0.0
             if len(df) >= 6:
                 day5 = round((today_close - df.iloc[5]["close"]) / df.iloc[5]["close"] * 100, 2)
@@ -151,7 +215,7 @@ def _fetch_historical_changes(client: TushareClient, ts_codes: List[str]) -> Dic
                 day10 = round((today_close - df.iloc[10]["close"]) / df.iloc[10]["close"] * 100, 2)
             if len(df) >= 21:
                 day20 = round((today_close - df.iloc[20]["close"]) / df.iloc[20]["close"] * 100, 2)
-            
+
             result[code] = {
                 "day5Change": day5,
                 "day10Change": day10,
@@ -160,34 +224,46 @@ def _fetch_historical_changes(client: TushareClient, ts_codes: List[str]) -> Dic
             }
         except Exception:
             continue
-    
+
     return result
 
 
-def _row_to_concept_dict(row: pd.Series, rank: int, hist: Dict = None, 
-                         limit_counts: Dict = None, up_down: Dict = None) -> Dict:
-    """将 moneyflow DataFrame 行转为前端格式 dict。"""
-
-    pct_change = float(row.get("pct_change", 0) or 0)
-    net_amount = float(row.get("net_amount", 0) or 0)
-    company_num = int(row.get("company_num", 0) or 0)
-    close = float(row.get("close", 0) or 0)
-    net_buy = float(row.get("net_buy_amount", 0) or 0)
-    net_sell = float(row.get("net_sell_amount", 0) or 0)
+def _build_item(
+    row: pd.Series,
+    rank: int,
+    moneyflow: Dict[str, Dict],
+    hist: Dict[str, Dict],
+    limit_counts: Dict[str, Dict],
+    up_down: Dict[str, Dict],
+) -> Dict:
+    """Convert a mixed-daily row into frontend-compatible dict."""
     ts_code = row.get("ts_code", "")
-    name = row.get("industry", row.get("name", ""))
-    
+    name = row.get("name", "")
+    board_type = row.get("board_type", "行业")
+    pct_change = float(row.get("pct_change", 0) or 0)
+    close = float(row.get("close", 0) or 0)
+    vol = float(row.get("vol", 0) or 0)
+
+    # Moneyflow data (only for industries)
+    mf = moneyflow.get(ts_code, {})
+    net_amount = mf.get("net_amount", 0)
+    turnover = mf.get("turnover", 0)
+    company_num = mf.get("company_num", 0)
+
     # Historical data
-    h = (hist or {}).get(ts_code, {})
-    # Limit up/down counts
-    lc = (limit_counts or {}).get(name, {})
-    # Up/down stock counts
-    ud = (up_down or {}).get(name, {})
+    h = hist.get(ts_code, {})
+
+    # Limit counts (keyed by industry name, only for 881xxx)
+    lc = limit_counts.get(name, {}) if board_type == "行业" else {}
+
+    # Up/down counts (keyed by ts_code)
+    ud = up_down.get(ts_code, {})
 
     return {
         "rank": rank,
         "name": name,
         "code": ts_code,
+        "boardType": board_type,
         "changePct": round(pct_change, 2),
         "changeValue": round(close, 2),
         "moneyInflow": round(net_amount, 2),
@@ -196,8 +272,8 @@ def _row_to_concept_dict(row: pd.Series, rank: int, hist: Dict = None,
         "downCount": ud.get("downCount", 0),
         "limitUp": lc.get("limitUp", 0),
         "totalStocks": company_num,
-        "turnover": round(net_buy + net_sell, 2),
-        "volume": h.get("volume", 0),
+        "turnover": round(turnover, 2),
+        "volume": h.get("volume", round(vol / 10000, 2)),
         "day5Change": h.get("day5Change", 0),
         "day10Change": h.get("day10Change", 0),
         "day20Change": h.get("day20Change", 0),
@@ -205,66 +281,91 @@ def _row_to_concept_dict(row: pd.Series, rank: int, hist: Dict = None,
 
 
 def update_data(service: TonghuashunService) -> None:
-    """主更新逻辑：获取行业排名 → 生成 JSON。"""
+    """主更新逻辑：获取行业+概念混排 → 生成 JSON。"""
 
     print(f"\n{'=' * 60}")
     print(f"开始更新 — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'=' * 60}")
 
-    # 1. 获取行业资金流向排名
-    print("\n[1/3] 获取同花顺行业资金流向...")
-    df = service.get_industry_ranking()
+    client = service.client
+    trade_date = client.get_latest_trade_date()
+    print(f"  交易日: {trade_date}")
 
-    if df.empty:
-        print("⚠️  行业资金流向数据为空，跳过本次更新")
+    # 1. Build name mapping
+    print("\n[1/6] 获取板块名称映射...")
+    name_map = _build_name_map(client)
+    if not name_map:
+        print("⚠️  名称映射为空，跳过本次更新")
         return
 
-    print(f"  ✓ 获取到 {len(df)} 个行业板块")
+    # Reverse map: name → ts_code (for watchlist lookup)
+    reverse_map: Dict[str, str] = {v: k for k, v in name_map.items()}
 
-    # 1.5. 获取涨跌停统计
-    print("\n[1.5/4] 获取涨跌停统计...")
-    limit_counts = _fetch_limit_counts(service._client)
+    # 2. Fetch mixed daily (industry + concept)
+    print("\n[2/6] 获取 ths_daily 混排数据...")
+    df_mixed = _fetch_mixed_daily(client, trade_date, name_map)
+    if df_mixed.empty:
+        print("⚠️  ths_daily 数据为空，跳过本次更新")
+        return
+
+    n_industry = (df_mixed['board_type'] == '行业').sum()
+    n_concept = (df_mixed['board_type'] == '概念').sum()
+    print(f"  ✓ 共 {len(df_mixed)} 个板块 (行业: {n_industry}, 概念: {n_concept})")
+
+    # 3. Fetch moneyflow for 90 industries
+    print("\n[3/6] 获取行业资金流向 (90个行业)...")
+    moneyflow = _fetch_moneyflow_map(client, trade_date)
+    print(f"  ✓ 获取到 {len(moneyflow)} 个行业的资金数据")
+
+    # 4. Fetch limit-up/down counts
+    print("\n[4/6] 获取涨跌停统计...")
+    limit_counts = _fetch_limit_counts(client, trade_date)
     print(f"  ✓ 获取到 {len(limit_counts)} 个行业的涨跌停数据")
 
-    # 1.6. 获取历史涨跌数据（5日/10日/20日 + 成交量）
-    print("\n[1.6/4] 获取历史涨跌数据...")
-    all_codes = df["ts_code"].tolist()
-    hist = _fetch_historical_changes(service._client, all_codes[:TOP_N + len(WATCH_NAMES)])
+    # 5. Determine which codes need detailed data (TOP_N + watchlist)
+    top_codes: List[str] = df_mixed.head(TOP_N)["ts_code"].tolist()
+    watch_codes: List[str] = [reverse_map[n] for n in WATCH_NAMES if n in reverse_map]
+    detail_codes: List[str] = list(dict.fromkeys(top_codes + watch_codes))  # dedupe, preserve order
+
+    # 5a. Historical changes
+    print(f"\n[5/6] 获取历史涨跌数据 ({len(detail_codes)} 个板块)...")
+    hist = _fetch_historical_changes(client, detail_codes)
     print(f"  ✓ 获取到 {len(hist)} 个板块的历史数据")
 
-    # 1.7. 获取涨跌家数（TOP20 + 自选）
-    print("\n[1.7/4] 获取行业涨跌家数...")
-    target_names = list(set([r["industry"] for _, r in df.head(TOP_N).iterrows()] + WATCH_NAMES))
-    up_down = _fetch_up_down_counts(service._client, target_names, df)
-    print(f"  ✓ 获取到 {len(up_down)} 个行业的涨跌家数")
+    # 5b. Up/down stock counts
+    print(f"\n[6/6] 获取涨跌家数 ({len(detail_codes)} 个板块)...")
+    up_down = _fetch_up_down_counts(client, detail_codes, trade_date)
+    print(f"  ✓ 获取到 {len(up_down)} 个板块的涨跌家数")
 
-    # 2. 构建 topConcepts（涨幅前 TOP_N）
-    print(f"\n[2/4] 构建涨幅 TOP{TOP_N}...")
-    df_top = df.head(TOP_N)
+    # ── Build output ──
+
+    # Top N (mixed)
+    df_top = df_mixed.head(TOP_N)
     top_data = []
     for idx, (_, row) in enumerate(df_top.iterrows(), start=1):
-        top_data.append(_row_to_concept_dict(row, idx, hist, limit_counts, up_down))
+        top_data.append(_build_item(row, idx, moneyflow, hist, limit_counts, up_down))
 
-    # 3. 构建 watchConcepts（自选热门）
-    print(f"\n[3/4] 构建自选热门概念...")
+    # Watch list
     watch_data = []
     for watch_name in WATCH_NAMES:
-        matched = df[df["industry"] == watch_name]
+        matched = df_mixed[df_mixed["name"] == watch_name]
         if not matched.empty:
             row = matched.iloc[0]
-            watch_data.append(_row_to_concept_dict(row, len(watch_data) + 1, hist, limit_counts, up_down))
+            watch_data.append(
+                _build_item(row, len(watch_data) + 1, moneyflow, hist, limit_counts, up_down)
+            )
         else:
-            print(f"  ⚠️  自选概念 '{watch_name}' 未在行业数据中找到")
+            print(f"  ⚠️  自选概念 '{watch_name}' 未在混排数据中找到")
 
-    # Re-rank watch data
+    # Re-rank watchlist
     for idx, item in enumerate(watch_data, start=1):
         item["rank"] = idx
 
-    # 4. 保存 JSON
+    # Save JSON
     output = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "updateInterval": UPDATE_INTERVAL,
-        "dataSource": "tonghuashun_tushare",
+        "dataSource": "tonghuashun_mixed",
         "topConcepts": {
             "total": len(top_data),
             "data": top_data,
@@ -282,14 +383,14 @@ def update_data(service: TonghuashunService) -> None:
     print(f"   — 涨幅 TOP{TOP_N}: {len(top_data)} 个")
     print(f"   — 自选热门: {len(watch_data)} 个")
 
-    # 摘要
+    # Summary
     print(f"\n📊 涨幅前 5:")
     for item in top_data[:5]:
+        tag = f"[{item['boardType']}]"
         print(
-            f"   {item['rank']:2d}. {item['name']:10s}  "
+            f"   {item['rank']:2d}. {tag:4s} {item['name']:12s}  "
             f"{item['changePct']:+6.2f}%  "
             f"净流入: {item['moneyInflow']:+8.2f}亿  "
-            f"成分: {item['totalStocks']}只"
         )
 
 
@@ -302,10 +403,10 @@ def run_once(service: TonghuashunService) -> None:
 def run_continuous(service: TonghuashunService) -> None:
     """持续运行模式。"""
     print("=" * 60)
-    print("🚀 板块监控启动（同花顺数据源）")
+    print("🚀 板块监控启动（同花顺混排: 行业+概念）")
     print("=" * 60)
     print(f"监控配置:")
-    print(f"  — 涨幅前 {TOP_N} 行业")
+    print(f"  — 涨幅前 {TOP_N} 行业/概念（混排）")
     print(f"  — 自选热门: {len(WATCH_NAMES)} 个")
     print(f"  — 更新间隔: {UPDATE_INTERVAL} 秒 ({UPDATE_INTERVAL / 60:.1f} 分钟)")
     print(f"  — 输出文件: {OUTPUT_FILE}")
