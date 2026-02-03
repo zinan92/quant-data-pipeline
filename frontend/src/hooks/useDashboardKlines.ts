@@ -177,54 +177,42 @@ export function useDashboardKlines(): DashboardGridState {
     setLoadingCount(0);
     setErrors([]);
 
-    // Build all fetch tasks
-    const tasks: { asset: Asset; timeframe: string; promise: Promise<Response> }[] = [];
-
-    for (const asset of ALL_ASSETS) {
-      for (const tf of TIMEFRAMES) {
-        const url = getKlineUrl(asset, tf.id);
-        if (!url) continue;
-        tasks.push({
-          asset,
-          timeframe: tf.id,
-          promise: fetch(buildApiUrl(url)),
-        });
-      }
-    }
-
-    // Execute all in parallel
-    const results = await Promise.allSettled(
-      tasks.map(async (task, idx) => {
-        try {
-          const resp = await task.promise;
-          if (!resp.ok) {
-            throw new Error(`${task.asset.name} ${task.timeframe}: HTTP ${resp.status}`);
-          }
-          const data = await resp.json();
-          const normalized = normalizeKlines(data, task.asset.type);
-          setLoadingCount((c) => c + 1);
-          return { asset: task.asset, timeframe: task.timeframe, data: normalized };
-        } catch (e) {
-          setLoadingCount((c) => c + 1);
-          throw new Error(
-            `${task.asset.name} ${task.timeframe}: ${e instanceof Error ? e.message : "unknown error"}`
-          );
-        }
-      })
-    );
-
-    // Build data map
     const newMap: KlineDataMap = {};
     const newErrors: string[] = [];
 
-    for (const result of results) {
-      if (result.status === "fulfilled") {
-        const { asset, timeframe, data } = result.value;
-        if (!newMap[asset.id]) newMap[asset.id] = {};
-        newMap[asset.id][timeframe] = data;
-      } else {
-        newErrors.push(result.reason?.message || "Unknown error");
+    // Fetch per asset group sequentially, 3 timeframes per asset in parallel
+    // This prevents 30 concurrent requests overwhelming yfinance/backend
+    for (const group of ASSET_GROUPS) {
+      const groupResults = await Promise.allSettled(
+        group.assets.flatMap((asset) =>
+          TIMEFRAMES.map(async (tf) => {
+            const url = getKlineUrl(asset, tf.id);
+            if (!url) throw new Error(`No URL for ${asset.name} ${tf.id}`);
+            const resp = await fetch(buildApiUrl(url));
+            if (!resp.ok) {
+              throw new Error(`${asset.name} ${tf.label}: HTTP ${resp.status}`);
+            }
+            const data = await resp.json();
+            const normalized = normalizeKlines(data, asset.type);
+            setLoadingCount((c) => c + 1);
+            return { asset, timeframe: tf.id, data: normalized };
+          })
+        )
+      );
+
+      for (const result of groupResults) {
+        if (result.status === "fulfilled") {
+          const { asset, timeframe, data } = result.value;
+          if (!newMap[asset.id]) newMap[asset.id] = {};
+          newMap[asset.id][timeframe] = data;
+        } else {
+          newErrors.push(result.reason?.message || "Unknown error");
+          setLoadingCount((c) => c + 1);
+        }
       }
+
+      // Update state progressively per group so charts appear as they load
+      setDataMap((prev) => ({ ...prev, ...newMap }));
     }
 
     setDataMap(newMap);
