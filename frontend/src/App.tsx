@@ -7,6 +7,8 @@ import { IndexChart } from "./components/IndexChart";
 import { RefreshButton } from "./components/RefreshButton";
 import { SimulatedPortfolioView } from "./components/SimulatedPortfolioView";
 import { MomentumSignalsView } from "./components/MomentumSignalsView";
+import { ConceptMonitorTable } from "./components/ConceptMonitorTable";
+import { ConceptKlinePanel } from "./components/ConceptKlinePanel";
 import type { Timeframe } from "./types/timeframe";
 import type { MAConfig } from "./types/chartConfig";
 import { DEFAULT_MA_CONFIG } from "./types/chartConfig";
@@ -14,10 +16,10 @@ import { DEFAULT_MA_CONFIG } from "./types/chartConfig";
 const DEFAULT_KLINE_LIMIT = 120;
 const KLINE_LIMIT_KEY = "klineLimit";
 
-type ViewMode = "watchlist" | "stock" | "portfolio" | "signals";
+type ViewMode = "market" | "watchlist" | "stock" | "portfolio" | "signals";
 
 export default function App() {
-  const [viewMode, setViewMode] = useState<ViewMode>("watchlist");
+  const [viewMode, setViewMode] = useState<ViewMode>("market");
   const [selectedStock, setSelectedStock] = useState<string | null>(null);
   const [timeframe, setTimeframe] = useState<Timeframe>("day");
   const [maConfig, setMAConfig] = useState<MAConfig>(DEFAULT_MA_CONFIG);
@@ -51,7 +53,7 @@ export default function App() {
   const handleBackClick = () => {
     setHistory(prev => {
       if (prev.length === 0) {
-        setViewMode("watchlist");
+        setViewMode("market");
         setSelectedStock(null);
         return prev;
       }
@@ -63,6 +65,8 @@ export default function App() {
     });
   };
 
+  const isMainTab = viewMode === "market" || viewMode === "watchlist";
+
   return (
     <div className="app">
       {/* 顶部导航栏 */}
@@ -72,12 +76,12 @@ export default function App() {
           <SearchBar onSelectStock={handleStockSelect} />
         </div>
         <div className="app__topbar-right">
-          {viewMode !== "watchlist" && (
+          {!isMainTab && (
             <button className="topbar__button topbar__button--secondary" onClick={handleBackClick}>
               ← 返回
             </button>
           )}
-          {viewMode === "watchlist" && (
+          {isMainTab && (
             <>
               <RefreshButton />
               <button className="topbar__button topbar__button--warning" onClick={() => { pushHistory(); setViewMode("signals"); }}>
@@ -86,6 +90,18 @@ export default function App() {
               <button className="topbar__button topbar__button--secondary" onClick={handlePortfolioClick}>
                 持仓
               </button>
+              <button
+                className={`topbar__button ${viewMode === "market" ? "topbar__button--primary" : "topbar__button--secondary"}`}
+                onClick={() => setViewMode("market")}
+              >
+                📊 市场
+              </button>
+              <button
+                className={`topbar__button ${viewMode === "watchlist" ? "topbar__button--primary" : "topbar__button--secondary"}`}
+                onClick={() => setViewMode("watchlist")}
+              >
+                ⭐ 我的自选
+              </button>
             </>
           )}
         </div>
@@ -93,31 +109,53 @@ export default function App() {
 
       {/* 主内容区 */}
       <main className="app__main">
-        {/* 指数区：上证(含表格) + 创业板(仅图) + 科创50(仅图) — 始终显示 */}
-        <div className="dashboard dashboard--fullwidth">
-          <div className="index-row">
-            <IndexChart tsCode="000001.SH" maConfig={maConfig} onMAConfigChange={setMAConfig} />
-            <IndexChart tsCode="399006.SZ" maConfig={maConfig} onMAConfigChange={setMAConfig} hideIndicators />
-            <IndexChart tsCode="000688.SH" maConfig={maConfig} onMAConfigChange={setMAConfig} hideIndicators />
-          </div>
-        </div>
+        {/* Tab 1: 市场概览 */}
+        {viewMode === "market" && (
+          <>
+            {/* 指数区 */}
+            <div className="dashboard dashboard--fullwidth">
+              <div className="index-row">
+                <IndexChart tsCode="000001.SH" maConfig={maConfig} onMAConfigChange={setMAConfig} />
+                <IndexChart tsCode="399006.SZ" maConfig={maConfig} onMAConfigChange={setMAConfig} hideIndicators />
+                <IndexChart tsCode="000688.SH" maConfig={maConfig} onMAConfigChange={setMAConfig} hideIndicators />
+              </div>
+            </div>
 
-        {/* 内容区域 */}
-        <div className="app__content">
-          {viewMode === "watchlist" && (
+            {/* 板块排行 */}
+            <div className="app__content">
+              <div className="concept-panels-row">
+                <ConceptMonitorTable type="top" topN={20} />
+                <ConceptMonitorTable type="watch" />
+              </div>
+              <ConceptKlinePanel maConfig={maConfig} onConceptClick={() => {}} />
+            </div>
+          </>
+        )}
+
+        {/* Tab 2: 我的自选 */}
+        {viewMode === "watchlist" && (
+          <div className="app__content">
             <WatchlistView
               maConfig={maConfig}
               onMAConfigChange={setMAConfig}
               onPortfolioClick={handlePortfolioClick}
             />
-          )}
-          {viewMode === "portfolio" && (
+          </div>
+        )}
+
+        {/* 其他视图 */}
+        {viewMode === "portfolio" && (
+          <div className="app__content">
             <SimulatedPortfolioView />
-          )}
-          {viewMode === "signals" && (
+          </div>
+        )}
+        {viewMode === "signals" && (
+          <div className="app__content">
             <MomentumSignalsView />
-          )}
-          {viewMode === "stock" && selectedStock && (
+          </div>
+        )}
+        {viewMode === "stock" && selectedStock && (
+          <div className="app__content">
             <StockDetail
               ticker={selectedStock}
               maConfig={maConfig}
@@ -125,8 +163,8 @@ export default function App() {
               klineLimit={klineLimit}
               onKlineLimitChange={setKlineLimit}
             />
-          )}
-        </div>
+          </div>
+        )}
       </main>
     </div>
   );
