@@ -1,12 +1,12 @@
 /**
  * Hook for fetching ALL K-line data for the dashboard grid.
- * Fetches 10 assets × 3 timeframes = 30 datasets in parallel.
+ * 10 assets × 3 timeframes = 30 datasets.
  */
 import { useState, useCallback, useRef, useEffect } from "react";
 import { buildApiUrl } from "../utils/api";
 import type { KlineDataPoint } from "../components/charts/KlineChart";
 
-// ─── Asset types ───
+// ─── Types ───
 
 export interface Asset {
   id: string;
@@ -51,7 +51,6 @@ export const ASSET_GROUPS: AssetGroup[] = [
   },
 ];
 
-// Flatten for convenience
 export const ALL_ASSETS: Asset[] = ASSET_GROUPS.flatMap((g) => g.assets);
 
 export const TIMEFRAMES = [
@@ -60,20 +59,14 @@ export const TIMEFRAMES = [
   { id: "5m", label: "5分" },
 ];
 
-// ─── URL builder — uses correct endpoint per asset type ───
+// ─── URL builder ───
 
 function getKlineUrl(asset: Asset, timeframe: string): string {
   switch (asset.type) {
     case "index":
-      // Use the dedicated index kline endpoints (NOT /api/candles which is for stocks)
-      if (timeframe === "day") {
-        return `/api/index/kline/${asset.id}?limit=120`;
-      } else if (timeframe === "30m") {
-        return `/api/index/kline30m/${asset.id}?limit=120`;
-      } else {
-        // 5m — use 30m endpoint as fallback (no 5m index endpoint exists)
-        return `/api/index/kline30m/${asset.id}?limit=120`;
-      }
+      if (timeframe === "day") return `/api/index/kline/${asset.id}?limit=120`;
+      if (timeframe === "30m") return `/api/index/kline30m/${asset.id}?limit=120`;
+      return `/api/index/kline30m/${asset.id}?limit=120`; // 5m fallback
 
     case "commodity": {
       const interval = timeframe === "day" ? "1d" : timeframe === "30m" ? "30m" : "5m";
@@ -81,7 +74,7 @@ function getKlineUrl(asset: Asset, timeframe: string): string {
     }
 
     case "crypto": {
-      const interval = timeframe === "day" ? "1d" : timeframe === "30m" ? "30m" : "5m";
+      const interval = timeframe === "day" ? "1d" : timeframe === "30m" ? "1h" : "5m";
       return `/api/crypto/kline/${asset.id}?interval=${interval}&limit=120`;
     }
 
@@ -90,64 +83,61 @@ function getKlineUrl(asset: Asset, timeframe: string): string {
   }
 }
 
-// ─── Response normalizer ───
+// ─── Normalizer ───
 
-function normalizeKlines(data: any, type: string): KlineDataPoint[] {
+function normalizeKlines(data: any, _type: string): KlineDataPoint[] {
   const items = data.candles || data.klines || [];
+  if (!Array.isArray(items) || items.length === 0) return [];
+
   return items.map((k: any) => {
     let dateStr = "";
 
-    // Index daily: { date: "YYYYMMDD" }
+    // Has k.date (index daily "YYYYMMDD", commodity "YYYY-MM-DD", commodity intraday "YYYY-MM-DDTHH:MM:SS")
     if (k.date && typeof k.date === "string") {
       if (/^\d{8}$/.test(k.date)) {
-        // YYYYMMDD → YYYY-MM-DD
         dateStr = `${k.date.slice(0, 4)}-${k.date.slice(4, 6)}-${k.date.slice(6, 8)}`;
       } else if (k.date.includes("T")) {
-        // Intraday: "YYYY-MM-DDTHH:MM:SS" → unix seconds
         dateStr = String(Math.floor(new Date(k.date).getTime() / 1000));
       } else {
-        // "YYYY-MM-DD" already fine
-        dateStr = k.date;
+        dateStr = k.date; // "YYYY-MM-DD"
       }
     }
-    // Index 30m: { datetime: unix_seconds_number }
+    // Index 30m: { datetime: unix_seconds }
     else if (k.datetime && typeof k.datetime === "number") {
       dateStr = String(k.datetime);
     }
-    // Crypto: { time: "YYYY-MM-DDTHH:MM:SS", timestamp: epoch_ms }
+    // Crypto: { timestamp: epoch_ms }
     else if (k.timestamp && typeof k.timestamp === "number") {
       dateStr = String(Math.floor(k.timestamp / 1000));
-    } else if (k.time && typeof k.time === "string") {
+    }
+    // Crypto fallback: { time: "ISO string" }
+    else if (k.time && typeof k.time === "string") {
       if (k.time.includes("T")) {
         dateStr = String(Math.floor(new Date(k.time).getTime() / 1000));
       } else {
         dateStr = k.time;
       }
-    } else if (k.timestamp && typeof k.timestamp === "string") {
-      dateStr = k.timestamp;
     }
 
     return {
       date: dateStr,
-      open: k.open,
-      high: k.high,
-      low: k.low,
-      close: k.close,
-      volume: k.volume || 0,
+      open: k.open ?? 0,
+      high: k.high ?? 0,
+      low: k.low ?? 0,
+      close: k.close ?? 0,
+      volume: k.volume ?? 0,
     };
-  });
+  }).filter((k: KlineDataPoint) => k.date !== "" && k.close > 0);
 }
 
-// ─── Health check type ───
+// ─── Health check ───
 
 export interface HealthStatus {
   status: "healthy" | "degraded" | "error" | "loading";
   checks?: Record<string, any>;
-  timestamp?: string;
 }
 
-// ─── Data map type ───
-// assetId → timeframe → KlineDataPoint[]
+// ─── Data map ───
 export type KlineDataMap = Record<string, Record<string, KlineDataPoint[]>>;
 
 export interface DashboardGridState {
@@ -170,70 +160,68 @@ export function useDashboardKlines(): DashboardGridState {
   const [health, setHealth] = useState<HealthStatus>({ status: "loading" });
   const fetchedRef = useRef(false);
 
-  const totalCount = ALL_ASSETS.length * TIMEFRAMES.length; // 30
+  const totalCount = ALL_ASSETS.length * TIMEFRAMES.length;
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
     setLoadingCount(0);
     setErrors([]);
 
-    const newMap: KlineDataMap = {};
-    const newErrors: string[] = [];
+    // Build task list
+    const tasks = ALL_ASSETS.flatMap((asset) =>
+      TIMEFRAMES.map((tf) => ({ asset, timeframe: tf.id, url: getKlineUrl(asset, tf.id) }))
+    );
 
-    // Fetch per asset group sequentially, 3 timeframes per asset in parallel
-    // This prevents 30 concurrent requests overwhelming yfinance/backend
-    for (const group of ASSET_GROUPS) {
-      const groupResults = await Promise.allSettled(
-        group.assets.flatMap((asset) =>
-          TIMEFRAMES.map(async (tf) => {
-            const url = getKlineUrl(asset, tf.id);
-            if (!url) throw new Error(`No URL for ${asset.name} ${tf.id}`);
-            const resp = await fetch(buildApiUrl(url));
-            if (!resp.ok) {
-              throw new Error(`${asset.name} ${tf.label}: HTTP ${resp.status}`);
-            }
-            const data = await resp.json();
-            const normalized = normalizeKlines(data, asset.type);
-            setLoadingCount((c) => c + 1);
-            return { asset, timeframe: tf.id, data: normalized };
-          })
-        )
-      );
+    // Fetch all in parallel with Promise.allSettled
+    const results = await Promise.allSettled(
+      tasks.map(async (task) => {
+        const resp = await fetch(buildApiUrl(task.url));
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        const normalized = normalizeKlines(data, task.asset.type);
+        return { assetId: task.asset.id, timeframe: task.timeframe, data: normalized };
+      })
+    );
 
-      for (const result of groupResults) {
-        if (result.status === "fulfilled") {
-          const { asset, timeframe, data } = result.value;
-          if (!newMap[asset.id]) newMap[asset.id] = {};
-          newMap[asset.id][timeframe] = data;
-        } else {
-          newErrors.push(result.reason?.message || "Unknown error");
-          setLoadingCount((c) => c + 1);
-        }
+    // Build map from results
+    const map: KlineDataMap = {};
+    const errs: string[] = [];
+    let loaded = 0;
+
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      const task = tasks[i];
+      loaded++;
+
+      if (result.status === "fulfilled") {
+        const { assetId, timeframe, data } = result.value;
+        if (!map[assetId]) map[assetId] = {};
+        map[assetId][timeframe] = data;
+      } else {
+        errs.push(`${task.asset.name} ${task.timeframe}: ${result.reason?.message || "error"}`);
       }
-
-      // Update state progressively per group so charts appear as they load
-      setDataMap((prev) => ({ ...prev, ...newMap }));
     }
 
-    setDataMap(newMap);
-    setErrors(newErrors);
+    console.log("[Dashboard] Loaded", loaded, "charts. Map keys:", Object.keys(map), "Errors:", errs.length);
+    for (const [id, tfs] of Object.entries(map)) {
+      console.log(`  ${id}:`, Object.entries(tfs).map(([tf, d]) => `${tf}=${d.length}`).join(", "));
+    }
+
+    setDataMap(map);
+    setLoadingCount(loaded);
+    setErrors(errs);
     setLoading(false);
 
-    // Fetch health check
+    // Health check
     try {
-      const healthResp = await fetch(buildApiUrl("/api/health/data"));
-      if (healthResp.ok) {
-        const healthData = await healthResp.json();
-        setHealth(healthData);
-      } else {
-        setHealth({ status: "error" });
-      }
+      const hr = await fetch(buildApiUrl("/api/health/data"));
+      if (hr.ok) setHealth(await hr.json());
+      else setHealth({ status: "error" });
     } catch {
       setHealth({ status: "error" });
     }
   }, []);
 
-  // Fetch on mount
   useEffect(() => {
     if (!fetchedRef.current) {
       fetchedRef.current = true;
@@ -241,13 +229,5 @@ export function useDashboardKlines(): DashboardGridState {
     }
   }, [fetchAll]);
 
-  return {
-    dataMap,
-    loading,
-    loadingCount,
-    totalCount,
-    errors,
-    health,
-    refresh: fetchAll,
-  };
+  return { dataMap, loading, loadingCount, totalCount, errors, health, refresh: fetchAll };
 }

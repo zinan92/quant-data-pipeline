@@ -1,68 +1,81 @@
-/* ===========================
-   Multi-Asset Dashboard — Grid Layout (30 charts)
-   =========================== */
+/* ═══ Multi-Asset Dashboard ═══ */
 
-:root {
-  --color-up: #22c55e;
-  --color-down: #ef4444;
-  --card-bg: #111827;
-  --card-border: rgba(255, 255, 255, 0.06);
-  --card-hover-border: rgba(255, 255, 255, 0.15);
+.multi-asset-dashboard {
+  padding: 16px;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
-.multi-asset-dashboard--grid {
-  max-width: 1600px;
-  margin: 0 auto;
-  padding: 1rem 0.75rem;
-}
-
-/* ── Header ── */
+/* ─── Header ─── */
 
 .dashboard__header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1rem;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .dashboard__title {
-  font-size: 1.4rem;
+  font-size: 20px;
   font-weight: 700;
-  color: #e6edf7;
+  color: #e0e6f0;
   margin: 0;
 }
 
-.dashboard__meta {
+.dashboard__controls {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .dashboard__refresh-btn {
-  background: none;
-  border: 1px solid var(--card-border);
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
   border-radius: 6px;
-  padding: 0.35rem 0.6rem;
+  color: #e0e6f0;
+  padding: 4px 8px;
   cursor: pointer;
-  font-size: 1rem;
-  transition: border-color 0.2s;
+  font-size: 16px;
 }
-.dashboard__refresh-btn:hover {
-  border-color: var(--card-hover-border);
-}
-.dashboard__refresh-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.dashboard__refresh-btn:hover { background: rgba(255,255,255,0.1); }
+.dashboard__refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ─── MA Toggle ─── */
+
+.ma-toggle-bar {
+  display: flex;
+  gap: 4px;
 }
 
-/* ── Health Dot ── */
+.ma-toggle-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px;
+  background: transparent;
+  color: rgba(255,255,255,0.4);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ma-toggle-btn:hover { color: rgba(255,255,255,0.7); }
+
+.ma-toggle-btn--active.ma-toggle-btn--ma5  { background: rgba(255,214,10,0.2); color: #ffd60a; border-color: #ffd60a; }
+.ma-toggle-btn--active.ma-toggle-btn--ma10 { background: rgba(10,132,255,0.2); color: #0a84ff; border-color: #0a84ff; }
+.ma-toggle-btn--active.ma-toggle-btn--ma20 { background: rgba(191,90,242,0.2); color: #bf5af2; border-color: #bf5af2; }
+.ma-toggle-btn--active.ma-toggle-btn--ma30 { background: rgba(255,159,10,0.2); color: #ff9f0a; border-color: #ff9f0a; }
+.ma-toggle-btn--active.ma-toggle-btn--ma50 { background: rgba(100,210,255,0.2); color: #64d2ff; border-color: #64d2ff; }
+
+/* ─── Health Dot ─── */
 
 .health-dot {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 0.35rem;
-  font-size: 0.75rem;
-  color: rgba(230, 237, 247, 0.5);
+  gap: 4px;
+  font-size: 11px;
+  color: rgba(255,255,255,0.5);
 }
 
 .health-dot__circle {
@@ -70,275 +83,229 @@
   height: 8px;
   border-radius: 50%;
   display: inline-block;
-  animation: pulse-glow 2s infinite;
 }
 
-@keyframes pulse-glow {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-.health-dot__label {
-  text-transform: capitalize;
-}
-
-/* ── Progress Bar ── */
+/* ─── Progress ─── */
 
 .dashboard-progress {
-  margin-bottom: 1rem;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
+  margin-bottom: 12px;
 }
 
 .dashboard-progress__bar {
-  flex: 1;
-  height: 4px;
-  background: rgba(255, 255, 255, 0.06);
+  height: 3px;
+  background: rgba(255,255,255,0.05);
   border-radius: 2px;
   overflow: hidden;
 }
 
 .dashboard-progress__fill {
   height: 100%;
-  background: linear-gradient(90deg, #6366f1, #818cf8);
-  border-radius: 2px;
-  transition: width 0.3s ease;
+  background: #4f46e5;
+  transition: width 0.3s;
 }
 
 .dashboard-progress__text {
-  font-size: 0.75rem;
-  color: rgba(230, 237, 247, 0.4);
-  white-space: nowrap;
+  font-size: 11px;
+  color: rgba(255,255,255,0.4);
 }
 
-/* ── Errors ── */
+/* ─── Errors ─── */
 
 .dashboard-errors {
-  margin-bottom: 1rem;
-  background: rgba(239, 68, 68, 0.06);
-  border: 1px solid rgba(239, 68, 68, 0.2);
-  border-radius: 8px;
-  padding: 0.5rem 0.75rem;
+  margin-bottom: 12px;
+  background: rgba(239,68,68,0.1);
+  border: 1px solid rgba(239,68,68,0.3);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #fca5a5;
 }
+.dashboard-errors summary { cursor: pointer; }
+.dashboard-errors ul { margin: 4px 0 0 16px; padding: 0; }
+.dashboard-errors li { margin: 2px 0; }
 
-.dashboard-errors__summary {
-  cursor: pointer;
-  font-size: 0.8rem;
-  color: #f87171;
-  user-select: none;
-}
+/* ─── Timeframe Labels Row ─── */
 
-.dashboard-errors__list {
-  margin: 0.5rem 0 0;
-  padding-left: 1.25rem;
-  font-size: 0.75rem;
-  color: rgba(248, 113, 113, 0.7);
-  max-height: 120px;
-  overflow-y: auto;
-}
-
-.dashboard-errors__list li {
-  margin-bottom: 0.2rem;
-}
-
-/* ── Timeframe Header ── */
-
-.dashboard-tf-header {
+.tf-labels-row {
   display: flex;
-  align-items: center;
-  margin-bottom: 0.25rem;
-  padding: 0 0.25rem;
+  gap: 8px;
+  margin-bottom: 4px;
+  padding: 0 4px;
 }
 
-.dashboard-tf-header__label {
-  width: 80px;
-  min-width: 80px;
+.tf-labels-row__spacer {
+  width: 0;
   flex-shrink: 0;
 }
 
-.dashboard-tf-header__cell {
+.tf-labels-row__labels {
+  flex: 1;
+  display: flex;
+  gap: 4px;
+}
+
+.tf-label {
   flex: 1;
   text-align: center;
-  font-size: 0.75rem;
+  font-size: 11px;
+  color: rgba(255,255,255,0.35);
   font-weight: 600;
-  color: rgba(230, 237, 247, 0.4);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
 }
 
-/* ── Chart Grid ── */
+/* ─── Asset Group (collapsible) ─── */
 
-.dashboard-chart-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+.asset-group {
+  margin-bottom: 8px;
 }
 
-/* ── Group ── */
-
-.dashboard-group {
-  margin-bottom: 0.5rem;
-}
-
-.dashboard-group__title {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: rgba(230, 237, 247, 0.6);
-  margin: 0 0 0.5rem;
+.asset-group__header {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 0.5rem 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.dashboard-group__emoji {
-  font-size: 1rem;
-}
-
-/* ── Asset Row ── */
-
-.dashboard-asset-row {
-  display: flex;
-  align-items: stretch;
-  margin-bottom: 0.35rem;
-}
-
-.dashboard-asset-label {
-  width: 80px;
-  min-width: 80px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding-right: 0.5rem;
-}
-
-.dashboard-asset-label__name {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #e6edf7;
-  white-space: nowrap;
-}
-
-.dashboard-asset-label__code {
-  font-size: 0.65rem;
-  color: rgba(230, 237, 247, 0.3);
-}
-
-.dashboard-asset-charts {
-  display: flex;
-  flex: 1;
-  gap: 0.35rem;
-  min-width: 0;
-}
-
-/* ── Chart Cell ── */
-
-.dashboard-chart-cell {
-  flex: 1;
-  min-width: 0;
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
+  gap: 8px;
+  cursor: pointer;
+  padding: 6px 8px;
   border-radius: 6px;
+  user-select: none;
+  transition: background 0.15s;
+}
+.asset-group__header:hover {
+  background: rgba(255,255,255,0.03);
+}
+
+.asset-group__toggle {
+  font-size: 10px;
+  color: rgba(255,255,255,0.4);
+  width: 12px;
+}
+
+.asset-group__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #b0b8cc;
+  margin: 0;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.asset-group__count {
+  font-size: 11px;
+  color: rgba(255,255,255,0.25);
+  margin-left: auto;
+}
+
+.asset-group__body {
+  padding: 0 4px;
+}
+
+/* ─── Asset Row Pair (2 per row) ─── */
+
+.asset-row-pair {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+/* ─── Asset Card ─── */
+
+.asset-card {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 8px;
   overflow: hidden;
-  height: 280px;
+  background: rgba(255,255,255,0.01);
 }
 
-/* ── Loading Skeleton ── */
+.asset-card--spacer {
+  visibility: hidden;
+}
 
-.dashboard-chart-skeleton {
+.asset-card__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: rgba(255,255,255,0.03);
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+
+.asset-card__name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #c8d0e4;
+}
+
+.asset-card__code {
+  font-size: 10px;
+  color: rgba(255,255,255,0.25);
+}
+
+.asset-card__charts {
+  display: flex;
+  gap: 2px;
+}
+
+/* ─── Chart Cell ─── */
+
+.chart-cell {
+  flex: 1;
+  min-width: 0;
+  min-height: 240px;
+  position: relative;
+}
+
+.chart-cell__empty,
+.chart-cell__skeleton {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100%;
-  gap: 0.5rem;
+  height: 240px;
+  background: rgba(255,255,255,0.02);
 }
 
-.dashboard-chart-skeleton__title {
-  font-size: 0.7rem;
-  color: rgba(230, 237, 247, 0.25);
+.chart-cell__title {
+  font-size: 10px;
+  color: rgba(255,255,255,0.25);
+  margin-bottom: 4px;
 }
 
-.skeleton-pulse {
+.chart-cell__msg {
+  font-size: 11px;
+  color: rgba(255,255,255,0.15);
+}
+
+.chart-cell__pulse {
   width: 60%;
-  height: 4px;
-  background: linear-gradient(90deg,
-    rgba(255, 255, 255, 0.04) 25%,
-    rgba(255, 255, 255, 0.08) 50%,
-    rgba(255, 255, 255, 0.04) 75%
-  );
-  background-size: 200% 100%;
+  height: 2px;
+  background: rgba(255,255,255,0.05);
   border-radius: 2px;
-  animation: skeleton-shimmer 1.5s infinite;
+  animation: pulse 1.5s ease-in-out infinite;
 }
 
-@keyframes skeleton-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+@keyframes pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.8; }
 }
 
-/* ── Empty Chart ── */
-
-.dashboard-chart-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  gap: 0.5rem;
-  color: rgba(230, 237, 247, 0.25);
-  font-size: 0.75rem;
-}
-
-.dashboard-chart-empty__title {
-  font-size: 0.7rem;
-  color: rgba(230, 237, 247, 0.35);
-}
-
-/* ── Responsive ── */
+/* ─── Responsive ─── */
 
 @media (max-width: 1200px) {
-  .dashboard-chart-cell {
-    height: 240px;
-  }
-}
-
-@media (max-width: 900px) {
-  /* Stack charts vertically on medium screens */
-  .dashboard-asset-row {
+  .asset-row-pair {
     flex-direction: column;
   }
-
-  .dashboard-asset-label {
-    width: auto;
-    min-width: auto;
-    padding: 0.25rem 0;
-  }
-
-  .dashboard-asset-charts {
-    flex-direction: column;
-  }
-
-  .dashboard-chart-cell {
-    height: 220px;
-  }
-
-  .dashboard-tf-header {
+  .tf-labels-row {
     display: none;
   }
 }
 
-@media (max-width: 480px) {
-  .multi-asset-dashboard--grid {
-    padding: 0.5rem 0.25rem;
+@media (max-width: 768px) {
+  .asset-card__charts {
+    flex-direction: column;
   }
-
-  .dashboard-chart-cell {
-    height: 200px;
+  .chart-cell {
+    min-height: 200px;
   }
 }

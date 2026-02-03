@@ -1,9 +1,8 @@
 /**
- * Multi-Asset Dashboard — All 30 charts on one scrollable page.
- * 10 assets × 3 timeframes (日线, 30分, 5分) side by side.
- * No price cards. No clicking to switch. Everything visible at once.
+ * Multi-Asset Dashboard — All charts on one scrollable page.
+ * 2 assets per row, collapsible groups, MA toggles.
  */
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
   useDashboardKlines,
   ASSET_GROUPS,
@@ -11,8 +10,35 @@ import {
 } from "../hooks/useDashboardKlines";
 import type { Asset, HealthStatus } from "../hooks/useDashboardKlines";
 import { KlineChart } from "./charts/KlineChart";
-import type { KlineDataPoint } from "./charts/KlineChart";
+import type { KlineDataPoint, KlineChartProps } from "./charts/KlineChart";
+import type { MAConfig } from "../types/chartConfig";
 import "./MultiAssetDashboard.css";
+
+// ─── MA Toggle Bar ───
+
+const MA_KEYS: { key: keyof MAConfig; label: string }[] = [
+  { key: "ma5", label: "MA5" },
+  { key: "ma10", label: "MA10" },
+  { key: "ma20", label: "MA20" },
+  { key: "ma30", label: "MA30" },
+  { key: "ma50", label: "MA50" },
+];
+
+function MAToggle({ config, onChange }: { config: MAConfig; onChange: (c: MAConfig) => void }) {
+  return (
+    <div className="ma-toggle-bar">
+      {MA_KEYS.map(({ key, label }) => (
+        <button
+          key={key}
+          className={`ma-toggle-btn ${config[key] ? "ma-toggle-btn--active" : ""} ma-toggle-btn--${key}`}
+          onClick={() => onChange({ ...config, [key]: !config[key] })}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 // ─── Health Dot ───
 
@@ -24,121 +50,153 @@ function HealthDot({ health }: { health: HealthStatus }) {
     loading: "#6b7280",
   };
   const color = colorMap[health.status] || "#6b7280";
-  const label =
-    health.status === "healthy"
-      ? "All systems OK"
-      : health.status === "degraded"
-        ? "Some data sources degraded"
-        : health.status === "error"
-          ? "Data source errors"
-          : "Checking...";
 
   return (
-    <span className="health-dot" title={label}>
-      <span
-        className="health-dot__circle"
-        style={{ backgroundColor: color }}
-      />
+    <span className="health-dot" title={health.status}>
+      <span className="health-dot__circle" style={{ backgroundColor: color }} />
       <span className="health-dot__label">{health.status}</span>
     </span>
   );
 }
 
-// ─── Loading Skeleton ───
+// ─── Single Chart Cell ───
 
-function ChartSkeleton() {
-  return (
-    <div className="dashboard-chart-cell">
-      <div className="dashboard-chart-skeleton">
-        <div className="skeleton-pulse" />
-      </div>
-    </div>
-  );
-}
-
-// ─── Lazy Chart Wrapper (IntersectionObserver) ───
-
-const LazyChart = React.memo(function LazyChart({
+const ChartCell = React.memo(function ChartCell({
   data,
   title,
+  maConfig,
 }: {
   data: KlineDataPoint[];
   title: string;
+  maConfig: MAConfig;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    const el = containerRef.current;
+    const el = ref.current;
     if (!el) return;
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setVisible(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: "200px" }
+    const obs = new IntersectionObserver(
+      ([e]) => { if (e.isIntersecting) { setVisible(true); obs.disconnect(); } },
+      { rootMargin: "300px" }
     );
-
-    observer.observe(el);
-    return () => observer.disconnect();
+    obs.observe(el);
+    return () => obs.disconnect();
   }, []);
 
   return (
-    <div className="dashboard-chart-cell" ref={containerRef}>
+    <div className="chart-cell" ref={ref}>
       {visible && data.length > 0 ? (
         <KlineChart
           data={data}
-          height={280}
+          height={240}
           showVolume={true}
           showMACD={true}
           compact={true}
           title={title}
+          maConfig={maConfig}
         />
-      ) : visible && data.length === 0 ? (
-        <div className="dashboard-chart-empty">
-          <span className="dashboard-chart-empty__title">{title}</span>
-          <span>暂无数据</span>
+      ) : visible ? (
+        <div className="chart-cell__empty">
+          <span className="chart-cell__title">{title}</span>
+          <span className="chart-cell__msg">暂无数据</span>
         </div>
       ) : (
-        <div className="dashboard-chart-skeleton">
-          <span className="dashboard-chart-skeleton__title">{title}</span>
-          <div className="skeleton-pulse" />
+        <div className="chart-cell__skeleton">
+          <span className="chart-cell__title">{title}</span>
+          <div className="chart-cell__pulse" />
         </div>
       )}
     </div>
   );
 });
 
-// ─── Asset Row ───
+// ─── Asset Card (3 timeframe charts) ───
 
-const AssetRow = React.memo(function AssetRow({
+const AssetCard = React.memo(function AssetCard({
   asset,
   dataForAsset,
+  maConfig,
 }: {
   asset: Asset;
   dataForAsset: Record<string, KlineDataPoint[]> | undefined;
+  maConfig: MAConfig;
 }) {
   return (
-    <div className="dashboard-asset-row">
-      <div className="dashboard-asset-label">
-        <span className="dashboard-asset-label__name">{asset.name}</span>
-        {asset.type === "index" && (
-          <span className="dashboard-asset-label__code">{asset.id}</span>
-        )}
+    <div className="asset-card">
+      <div className="asset-card__header">
+        <span className="asset-card__name">{asset.name}</span>
+        {asset.type === "index" && <span className="asset-card__code">{asset.id}</span>}
       </div>
-      <div className="dashboard-asset-charts">
-        {TIMEFRAMES.map((tf) => {
-          const data = dataForAsset?.[tf.id] || [];
-          const title = `${asset.name} — ${tf.label}`;
-          return <LazyChart key={tf.id} data={data} title={title} />;
-        })}
+      <div className="asset-card__charts">
+        {TIMEFRAMES.map((tf) => (
+          <ChartCell
+            key={tf.id}
+            data={dataForAsset?.[tf.id] || []}
+            title={`${asset.name} — ${tf.label}`}
+            maConfig={maConfig}
+          />
+        ))}
       </div>
     </div>
   );
 });
+
+// ─── Collapsible Group ───
+
+function AssetGroupSection({
+  title,
+  emoji,
+  assets,
+  dataMap,
+  maConfig,
+  defaultOpen,
+}: {
+  title: string;
+  emoji: string;
+  assets: Asset[];
+  dataMap: Record<string, Record<string, KlineDataPoint[]>>;
+  maConfig: MAConfig;
+  defaultOpen: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  // Pair assets into rows of 2
+  const rows: Asset[][] = [];
+  for (let i = 0; i < assets.length; i += 2) {
+    rows.push(assets.slice(i, i + 2));
+  }
+
+  return (
+    <div className="asset-group">
+      <div className="asset-group__header" onClick={() => setOpen(!open)}>
+        <span className="asset-group__toggle">{open ? "▼" : "▶"}</span>
+        <h2 className="asset-group__title">
+          <span>{emoji}</span> {title}
+        </h2>
+        <span className="asset-group__count">{assets.length} assets</span>
+      </div>
+      {open && (
+        <div className="asset-group__body">
+          {rows.map((row, ri) => (
+            <div key={ri} className="asset-row-pair">
+              {row.map((asset) => (
+                <AssetCard
+                  key={asset.id}
+                  asset={asset}
+                  dataForAsset={dataMap[asset.id]}
+                  maConfig={maConfig}
+                />
+              ))}
+              {/* Spacer if odd number */}
+              {row.length === 1 && <div className="asset-card asset-card--spacer" />}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Main Dashboard ───
 
@@ -146,18 +204,27 @@ export function MultiAssetDashboard() {
   const { dataMap, loading, loadingCount, totalCount, errors, health, refresh } =
     useDashboardKlines();
 
+  const [maConfig, setMAConfig] = useState<MAConfig>({
+    ma5: true,
+    ma10: true,
+    ma20: true,
+    ma30: true,
+    ma50: true,
+  });
+
   return (
-    <div className="multi-asset-dashboard multi-asset-dashboard--grid">
+    <div className="multi-asset-dashboard">
       {/* Header */}
       <div className="dashboard__header">
         <h1 className="dashboard__title">Market Overview</h1>
-        <div className="dashboard__meta">
+        <div className="dashboard__controls">
+          <MAToggle config={maConfig} onChange={setMAConfig} />
           <HealthDot health={health} />
           <button
             className="dashboard__refresh-btn"
             onClick={refresh}
             disabled={loading}
-            title="Refresh all data"
+            title="Refresh"
           >
             {loading ? "⏳" : "🔄"}
           </button>
@@ -182,10 +249,8 @@ export function MultiAssetDashboard() {
       {/* Errors */}
       {errors.length > 0 && (
         <details className="dashboard-errors">
-          <summary className="dashboard-errors__summary">
-            ⚠️ {errors.length} chart(s) failed to load
-          </summary>
-          <ul className="dashboard-errors__list">
+          <summary>⚠️ {errors.length} chart(s) failed</summary>
+          <ul>
             {errors.map((e, i) => (
               <li key={i}>{e}</li>
             ))}
@@ -193,32 +258,33 @@ export function MultiAssetDashboard() {
         </details>
       )}
 
-      {/* Timeframe header row */}
-      <div className="dashboard-tf-header">
-        <div className="dashboard-tf-header__label" />
-        {TIMEFRAMES.map((tf) => (
-          <div key={tf.id} className="dashboard-tf-header__cell">
-            {tf.label}
-          </div>
-        ))}
+      {/* Timeframe labels header */}
+      <div className="tf-labels-row">
+        <div className="tf-labels-row__spacer" />
+        <div className="tf-labels-row__labels">
+          {TIMEFRAMES.map((tf) => (
+            <span key={tf.id} className="tf-label">{tf.label}</span>
+          ))}
+        </div>
+        <div className="tf-labels-row__labels">
+          {TIMEFRAMES.map((tf) => (
+            <span key={tf.id + "2"} className="tf-label">{tf.label}</span>
+          ))}
+        </div>
       </div>
 
-      {/* Chart Grid */}
-      <div className="dashboard-chart-grid">
+      {/* Groups */}
+      <div className="dashboard-groups">
         {ASSET_GROUPS.map((group) => (
-          <div key={group.title} className="dashboard-group">
-            <h2 className="dashboard-group__title">
-              <span className="dashboard-group__emoji">{group.emoji}</span>
-              {group.title}
-            </h2>
-            {group.assets.map((asset) => (
-              <AssetRow
-                key={asset.id}
-                asset={asset}
-                dataForAsset={dataMap[asset.id]}
-              />
-            ))}
-          </div>
+          <AssetGroupSection
+            key={group.title}
+            title={group.title}
+            emoji={group.emoji}
+            assets={group.assets}
+            dataMap={dataMap}
+            maConfig={maConfig}
+            defaultOpen={true}
+          />
         ))}
       </div>
     </div>
