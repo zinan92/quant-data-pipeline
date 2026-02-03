@@ -1,11 +1,11 @@
 """
 大宗商品实时数据API
-使用 yfinance 获取黄金、白银、铜、原油期货实时价格
+使用 yfinance 获取黄金、白银、铜、原油期货实时价格及K线数据
 """
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from src.utils.logging import get_logger

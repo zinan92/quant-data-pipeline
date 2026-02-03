@@ -10,6 +10,7 @@ class Timeframe(str, Enum):
     WEEK = "week"
     MONTH = "month"
     MINS_30 = "30m"
+    MINS_5 = "5m"
 
 
 class SymbolType(str, Enum):
