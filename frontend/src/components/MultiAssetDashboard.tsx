@@ -1,252 +1,226 @@
 /**
- * Multi-Asset Dashboard — A-Share Indexes, Commodities, Crypto
- * All-in-one market overview with real-time auto-refresh
+ * Multi-Asset Dashboard — All 30 charts on one scrollable page.
+ * 10 assets × 3 timeframes (日线, 30分, 5分) side by side.
+ * No price cards. No clicking to switch. Everything visible at once.
  */
-import { useDashboardData } from "../hooks/useDashboardData";
-import { useDashboardKlines, ASSETS, TIMEFRAMES } from "../hooks/useDashboardKlines";
-import type { Asset } from "../hooks/useDashboardKlines";
-import type { AssetCardData } from "../types/dashboard";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  useDashboardKlines,
+  ASSET_GROUPS,
+  TIMEFRAMES,
+} from "../hooks/useDashboardKlines";
+import type { Asset, HealthStatus } from "../hooks/useDashboardKlines";
 import { KlineChart } from "./charts/KlineChart";
+import type { KlineDataPoint } from "./charts/KlineChart";
 import "./MultiAssetDashboard.css";
 
-// ─── Mini Sparkline SVG ───
+// ─── Health Dot ───
 
-function Sparkline({ data, positive }: { data: number[]; positive: boolean }) {
-  if (data.length < 2) return null;
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min || 1;
-  const w = 80;
-  const h = 28;
-  const step = w / (data.length - 1);
-
-  const points = data
-    .map((v, i) => `${i * step},${h - ((v - min) / range) * h}`)
-    .join(" ");
+function HealthDot({ health }: { health: HealthStatus }) {
+  const colorMap: Record<string, string> = {
+    healthy: "#22c55e",
+    degraded: "#eab308",
+    error: "#ef4444",
+    loading: "#6b7280",
+  };
+  const color = colorMap[health.status] || "#6b7280";
+  const label =
+    health.status === "healthy"
+      ? "All systems OK"
+      : health.status === "degraded"
+        ? "Some data sources degraded"
+        : health.status === "error"
+          ? "Data source errors"
+          : "Checking...";
 
   return (
-    <svg width={w} height={h} className="sparkline" viewBox={`0 0 ${w} ${h}`}>
-      <polyline
-        fill="none"
-        stroke={positive ? "var(--color-up)" : "var(--color-down)"}
-        strokeWidth="1.5"
-        points={points}
+    <span className="health-dot" title={label}>
+      <span
+        className="health-dot__circle"
+        style={{ backgroundColor: color }}
       />
-    </svg>
+      <span className="health-dot__label">{health.status}</span>
+    </span>
   );
 }
 
-// ─── Asset Card ───
+// ─── Loading Skeleton ───
 
-function AssetCard({ asset, showHiLo = true }: { asset: AssetCardData; showHiLo?: boolean }) {
-  const positive = asset.changePct >= 0;
-  const colorClass = positive ? "card--positive" : "card--negative";
-
-  const formatPrice = (p: number) => {
-    if (p === 0) return "—";
-    if (p >= 10000) return p.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    if (p >= 1) return p.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
-    return p.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 6 });
-  };
-
+function ChartSkeleton() {
   return (
-    <div className={`asset-card ${colorClass}`}>
-      <div className="asset-card__header">
-        <div className="asset-card__name">
-          {asset.nameCn ? (
-            <>
-              <span className="asset-card__name-cn">{asset.nameCn}</span>
-              <span className="asset-card__name-en">{asset.name}</span>
-            </>
-          ) : (
-            <span className="asset-card__name-primary">{asset.name}</span>
-          )}
-        </div>
-        <Sparkline data={asset.priceHistory} positive={positive} />
+    <div className="dashboard-chart-cell">
+      <div className="dashboard-chart-skeleton">
+        <div className="skeleton-pulse" />
       </div>
-
-      <div className="asset-card__price">{formatPrice(asset.price)}</div>
-
-      <div className="asset-card__change">
-        <span className={`asset-card__pct ${colorClass}`}>
-          {positive ? "+" : ""}{asset.changePct.toFixed(2)}%
-        </span>
-        <span className={`asset-card__abs ${colorClass}`}>
-          {positive ? "+" : ""}{formatPrice(Math.abs(asset.change))}
-        </span>
-      </div>
-
-      {showHiLo && asset.high24h != null && asset.low24h != null && (asset.high24h > 0 || asset.low24h > 0) && (
-        <div className="asset-card__hilo">
-          <span className="hilo__label">H</span>
-          <span className="hilo__val">{formatPrice(asset.high24h)}</span>
-          <span className="hilo__label">L</span>
-          <span className="hilo__val">{formatPrice(asset.low24h)}</span>
-        </div>
-      )}
     </div>
   );
 }
 
-// ─── Section ───
+// ─── Lazy Chart Wrapper (IntersectionObserver) ───
 
-function DashboardSection({
+const LazyChart = React.memo(function LazyChart({
+  data,
   title,
-  emoji,
-  assets,
-  showHiLo,
 }: {
+  data: KlineDataPoint[];
   title: string;
-  emoji: string;
-  assets: AssetCardData[];
-  showHiLo?: boolean;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "200px" }
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div className="dashboard-chart-cell" ref={containerRef}>
+      {visible && data.length > 0 ? (
+        <KlineChart
+          data={data}
+          height={280}
+          showVolume={true}
+          showMACD={true}
+          compact={true}
+          title={title}
+        />
+      ) : visible && data.length === 0 ? (
+        <div className="dashboard-chart-empty">
+          <span className="dashboard-chart-empty__title">{title}</span>
+          <span>暂无数据</span>
+        </div>
+      ) : (
+        <div className="dashboard-chart-skeleton">
+          <span className="dashboard-chart-skeleton__title">{title}</span>
+          <div className="skeleton-pulse" />
+        </div>
+      )}
+    </div>
+  );
+});
+
+// ─── Asset Row ───
+
+const AssetRow = React.memo(function AssetRow({
+  asset,
+  dataForAsset,
+}: {
+  asset: Asset;
+  dataForAsset: Record<string, KlineDataPoint[]> | undefined;
 }) {
   return (
-    <section className="dashboard-section">
-      <h2 className="dashboard-section__title">
-        <span className="dashboard-section__emoji">{emoji}</span>
-        {title}
-      </h2>
-      <div className="dashboard-section__grid">
-        {assets.length === 0 ? (
-          <div className="dashboard-section__placeholder">Loading…</div>
-        ) : (
-          assets.map((a) => <AssetCard key={a.id} asset={a} showHiLo={showHiLo} />)
+    <div className="dashboard-asset-row">
+      <div className="dashboard-asset-label">
+        <span className="dashboard-asset-label__name">{asset.name}</span>
+        {asset.type === "index" && (
+          <span className="dashboard-asset-label__code">{asset.id}</span>
         )}
       </div>
-    </section>
+      <div className="dashboard-asset-charts">
+        {TIMEFRAMES.map((tf) => {
+          const data = dataForAsset?.[tf.id] || [];
+          const title = `${asset.name} — ${tf.label}`;
+          return <LazyChart key={tf.id} data={data} title={title} />;
+        })}
+      </div>
+    </div>
   );
-}
-
-// ─── Main Dashboard ───
-
-// ─── K-line Section ───
-
-function KlineSection() {
-  const {
-    selectedAsset,
-    selectedTimeframe,
-    klineData,
-    loading: klineLoading,
-    error: klineError,
-    setAsset,
-    setTimeframe,
-  } = useDashboardKlines();
-
-  const renderAssetGroup = (assets: Asset[], label: string) => (
-    <span className="dashboard-asset-group">
-      {assets.map((asset) => (
-        <button
-          key={asset.id}
-          className={`dashboard-asset-btn ${selectedAsset.id === asset.id ? "dashboard-asset-btn--active" : ""}`}
-          onClick={() => setAsset(asset)}
-        >
-          {asset.name}
-        </button>
-      ))}
-    </span>
-  );
-
-  return (
-    <section className="dashboard-kline-section">
-      <h2 className="dashboard-section__title">
-        <span className="dashboard-section__emoji">📈</span>
-        K线图
-      </h2>
-
-      <div className="dashboard-asset-selector">
-        {renderAssetGroup(ASSETS.indexes, "A-Shares")}
-        <span className="dashboard-asset-separator">|</span>
-        {renderAssetGroup(ASSETS.commodities, "Commodities")}
-        <span className="dashboard-asset-separator">|</span>
-        {renderAssetGroup(ASSETS.crypto, "Crypto")}
-      </div>
-
-      <div className="dashboard-timeframe-tabs">
-        {TIMEFRAMES.map((tf) => (
-          <button
-            key={tf.id}
-            className={`dashboard-tf-btn ${selectedTimeframe === tf.id ? "dashboard-tf-btn--active" : ""}`}
-            onClick={() => setTimeframe(tf.id)}
-          >
-            {tf.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="dashboard-kline-chart-wrapper">
-        {klineLoading && klineData.length === 0 && (
-          <div className="dashboard-kline-loading">加载中…</div>
-        )}
-        {klineError && (
-          <div className="dashboard-kline-error">⚠️ {klineError}</div>
-        )}
-        {klineData.length > 0 && (
-          <KlineChart
-            data={klineData}
-            height={500}
-            showVolume={true}
-            showMACD={true}
-            title={`${selectedAsset.name} — ${TIMEFRAMES.find((t) => t.id === selectedTimeframe)?.label || ""}`}
-          />
-        )}
-        {!klineLoading && !klineError && klineData.length === 0 && (
-          <div className="dashboard-kline-empty">暂无数据</div>
-        )}
-      </div>
-    </section>
-  );
-}
+});
 
 // ─── Main Dashboard ───
 
 export function MultiAssetDashboard() {
-  const { indexes, commodities, crypto, loading, error, lastUpdate, refetch } =
-    useDashboardData();
+  const { dataMap, loading, loadingCount, totalCount, errors, health, refresh } =
+    useDashboardKlines();
 
   return (
-    <div className="multi-asset-dashboard">
+    <div className="multi-asset-dashboard multi-asset-dashboard--grid">
+      {/* Header */}
       <div className="dashboard__header">
         <h1 className="dashboard__title">Market Overview</h1>
         <div className="dashboard__meta">
-          {lastUpdate && (
-            <span className="dashboard__update-time">Updated: {lastUpdate}</span>
-          )}
-          <button className="dashboard__refresh-btn" onClick={refetch} disabled={loading}>
+          <HealthDot health={health} />
+          <button
+            className="dashboard__refresh-btn"
+            onClick={refresh}
+            disabled={loading}
+            title="Refresh all data"
+          >
             {loading ? "⏳" : "🔄"}
           </button>
         </div>
       </div>
 
-      {error && (
-        <div className="dashboard__error">
-          ⚠️ {error}
-          <button onClick={refetch} className="dashboard__retry-btn">Retry</button>
+      {/* Loading progress */}
+      {loading && (
+        <div className="dashboard-progress">
+          <div className="dashboard-progress__bar">
+            <div
+              className="dashboard-progress__fill"
+              style={{ width: `${(loadingCount / totalCount) * 100}%` }}
+            />
+          </div>
+          <span className="dashboard-progress__text">
+            Loading {loadingCount}/{totalCount} charts…
+          </span>
         </div>
       )}
 
-      <DashboardSection
-        title="A-Share Indexes"
-        emoji="🇨🇳"
-        assets={indexes}
-        showHiLo={false}
-      />
+      {/* Errors */}
+      {errors.length > 0 && (
+        <details className="dashboard-errors">
+          <summary className="dashboard-errors__summary">
+            ⚠️ {errors.length} chart(s) failed to load
+          </summary>
+          <ul className="dashboard-errors__list">
+            {errors.map((e, i) => (
+              <li key={i}>{e}</li>
+            ))}
+          </ul>
+        </details>
+      )}
 
-      <DashboardSection
-        title="Commodities"
-        emoji="🛢️"
-        assets={commodities}
-        showHiLo={true}
-      />
+      {/* Timeframe header row */}
+      <div className="dashboard-tf-header">
+        <div className="dashboard-tf-header__label" />
+        {TIMEFRAMES.map((tf) => (
+          <div key={tf.id} className="dashboard-tf-header__cell">
+            {tf.label}
+          </div>
+        ))}
+      </div>
 
-      <DashboardSection
-        title="Crypto"
-        emoji="₿"
-        assets={crypto}
-        showHiLo={true}
-      />
-
-      <KlineSection />
+      {/* Chart Grid */}
+      <div className="dashboard-chart-grid">
+        {ASSET_GROUPS.map((group) => (
+          <div key={group.title} className="dashboard-group">
+            <h2 className="dashboard-group__title">
+              <span className="dashboard-group__emoji">{group.emoji}</span>
+              {group.title}
+            </h2>
+            {group.assets.map((asset) => (
+              <AssetRow
+                key={asset.id}
+                asset={asset}
+                dataForAsset={dataMap[asset.id]}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

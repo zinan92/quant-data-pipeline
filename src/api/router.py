@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from src.api import routes_candles, routes_meta, routes_tasks, routes_status, routes_watchlist, routes_realtime, routes_index, routes_concepts, routes_evaluations, routes_simulated, routes_earnings, routes_sectors, routes_concept_monitor_v2, routes_news, routes_us_stock, routes_screener, routes_rotation, routes_pattern, routes_sentiment, routes_anomaly, routes_crypto, routes_crypto_ws, routes_perception, routes_commodities
+from src.api import routes_candles, routes_meta, routes_tasks, routes_status, routes_watchlist, routes_realtime, routes_index, routes_concepts, routes_evaluations, routes_simulated, routes_earnings, routes_sectors, routes_concept_monitor_v2, routes_news, routes_us_stock, routes_screener, routes_rotation, routes_pattern, routes_sentiment, routes_anomaly, routes_crypto, routes_crypto_ws, routes_perception, routes_commodities, routes_health
 
 api_router = APIRouter()
 
@@ -30,3 +30,4 @@ api_router.include_router(routes_anomaly.router)
 api_router.include_router(routes_crypto_ws.router, prefix="/crypto", tags=["crypto-realtime"])
 api_router.include_router(routes_perception.router, prefix="/perception", tags=["perception"])
 api_router.include_router(routes_commodities.router, prefix="/commodities", tags=["commodities"])
+api_router.include_router(routes_health.router, prefix="/health", tags=["health"])
