@@ -91,6 +91,11 @@ export function ConceptMonitorTable({ type, topN = 20 }: ConceptMonitorTableProp
                 <td className="text-center text-gray-500 font-mono text-xs">{row.rank}</td>
                 <td className="concept-name">
                   {row.name}
+                  {row.boardType && (
+                    <span className={`board-type-tag ${row.boardType === '概念' ? 'board-type-tag--concept' : 'board-type-tag--industry'}`}>
+                      {row.boardType}
+                    </span>
+                  )}
                 </td>
                 <td className={`text-right font-mono font-semibold ${getColor(row.changePct)}`}>
                   {formatPercent(row.changePct)}

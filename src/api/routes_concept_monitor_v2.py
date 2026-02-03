@@ -22,6 +22,7 @@ class ConceptData(BaseModel):
     rank: int
     name: str
     code: str
+    boardType: Optional[str] = None  # "行业" or "概念"
     changePct: float
     changeValue: float
     mainVolume: Optional[float] = None  # Optional: may not be in all data sources
@@ -85,6 +86,7 @@ async def get_top_concepts(n: int = 20):
             rank=idx + 1,
             name=concept['name'],
             code=concept['code'],
+            boardType=concept.get('boardType'),
             changePct=concept['changePct'],
             changeValue=concept['changeValue'],
             mainVolume=concept.get('mainVolume'),  # Optional field
@@ -125,6 +127,7 @@ async def get_watch_concepts():
             rank=idx + 1,
             name=concept['name'],
             code=concept['code'],
+            boardType=concept.get('boardType'),
             changePct=concept['changePct'],
             changeValue=concept['changeValue'],
             mainVolume=concept.get('mainVolume'),  # Optional field
