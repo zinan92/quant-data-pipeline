@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-概念板块资金流分析器 v1
+概念板块资金流分析器 v2
 =============================
 数据源: Tushare (moneyflow_ths + ths_member + ths_daily)
 口径: Tushare主力 ≈ 同花顺 × 0.6
@@ -11,7 +11,7 @@
 2. 概念板块资金流聚合 (个股moneyflow → 概念聚合)
 3. 日度对比 (yesterday vs today，加速/减速判断)
 4. 多日趋势 (3日/5日累计，趋势方向)
-5. 盘中30分钟轮动快照对比
+5. 盘中30分钟轮动快照对比 (价格变动排名轮动检测)
 
 用法:
   python scripts/concept_flow_analysis.py                    # 完整分析 (今日)
@@ -19,6 +19,8 @@
   python scripts/concept_flow_analysis.py --update-members   # 仅更新成分股缓存
   python scripts/concept_flow_analysis.py --trend            # 含多日趋势
   python scripts/concept_flow_analysis.py --json             # JSON输出 (供API/cron使用)
+  python scripts/concept_flow_analysis.py --rotation         # 盘中轮动检测
+  python scripts/concept_flow_analysis.py --rotation --snapshot  # 保存轮动快照
 """
 
 import sys
@@ -43,11 +45,17 @@ FLOW_THRESHOLD = 30  # 亿元, 概念板块资金净流入门槛
 TUSHARE_THS_COEFF = 0.6  # Tushare ≈ 同花顺 × 0.6
 MEMBER_CACHE_FILE = project_root / "data" / "cache" / "concept_members.json"
 FLOW_SNAPSHOT_DIR = project_root / "data" / "snapshots" / "concept_flow"
+INTRADAY_SNAPSHOT_DIR = project_root / "data" / "snapshots" / "intraday"
 ANALYSIS_OUTPUT_DIR = project_root / "data" / "analysis"
+
+# Rotation detection thresholds
+ROTATION_RANK_JUMP = 20       # 排名跳升≥20位视为显著轮动
+ROTATION_TOP_N = 50           # 只关注排名前50的概念
 
 # Ensure dirs exist
 MEMBER_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
 FLOW_SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+INTRADAY_SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
 ANALYSIS_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -385,7 +393,284 @@ def compute_multi_day_trend(pro, members: dict, target_date: str, days: int = 5)
 
 
 # ============================================================
-# 5. Formatted Output
+# 5. Intraday Rotation Detection (30-min snapshots)
+# ============================================================
+# NOTE: Tushare moneyflow is daily-only. Intraday rotation uses
+# PRICE CHANGE rankings from ths_daily (概念指数涨跌幅排名).
+# Also tries the local API concept-monitor for realtime data.
+
+def fetch_concept_price_rankings(pro, trade_date: str = None) -> pd.DataFrame:
+    """
+    Get concept board price change rankings.
+    Uses ths_daily for all concept boards.
+    
+    Returns DataFrame: ts_code, name, pct_change, close, vol, rank
+    """
+    if trade_date is None:
+        trade_date = datetime.now().strftime('%Y%m%d')
+
+    # Try local API first (realtime during market hours)
+    try:
+        import requests
+        r = requests.get(
+            'http://127.0.0.1:8000/api/concept-monitor/top',
+            params={'limit': 500},
+            timeout=5
+        )
+        if r.status_code == 200:
+            data = r.json()
+            items = data.get('data', [])
+            # Filter to concept boards only (exclude industry boards)
+            concepts = [x for x in items if x.get('boardType') == '概念']
+            if len(concepts) >= 10:
+                df = pd.DataFrame(concepts)
+                df = df.rename(columns={'code': 'ts_code', 'changePct': 'pct_change'})
+                df = df.sort_values('pct_change', ascending=False).reset_index(drop=True)
+                df['rank'] = range(1, len(df) + 1)
+                return df[['ts_code', 'name', 'pct_change', 'rank',
+                           'volume', 'upCount', 'downCount', 'limitUp']]
+    except Exception:
+        pass
+
+    # Fallback: Tushare ths_daily (all concept boards)
+    df_daily = pro.ths_daily(trade_date=trade_date)
+    if df_daily is None or len(df_daily) == 0:
+        return pd.DataFrame()
+
+    # Filter to concept boards (N type)
+    df_concepts = pro.ths_index(exchange='A', type='N')
+    concept_codes = set(df_concepts['ts_code'])
+    name_map = dict(zip(df_concepts['ts_code'], df_concepts['name']))
+
+    df = df_daily[df_daily['ts_code'].isin(concept_codes)].copy()
+    df['name'] = df['ts_code'].map(name_map)
+    df = df.sort_values('pct_change', ascending=False).reset_index(drop=True)
+    df['rank'] = range(1, len(df) + 1)
+    return df[['ts_code', 'name', 'pct_change', 'close', 'vol', 'rank']]
+
+
+def save_intraday_snapshot(df: pd.DataFrame, label: str = None) -> Path:
+    """
+    Save an intraday price ranking snapshot.
+    Label format: YYYYMMDD_HHMM (e.g., 20260203_1030)
+    """
+    if label is None:
+        label = datetime.now().strftime('%Y%m%d_%H%M')
+
+    filepath = INTRADAY_SNAPSHOT_DIR / f"rotation_{label}.json"
+    records = df.to_dict(orient='records')
+    with open(filepath, 'w') as f:
+        json.dump({
+            'label': label,
+            'timestamp': datetime.now().isoformat(),
+            'count': len(records),
+            'data': records,
+        }, f, ensure_ascii=False, indent=2)
+    return filepath
+
+
+def load_intraday_snapshot(label: str) -> pd.DataFrame:
+    """Load a previously saved intraday snapshot."""
+    filepath = INTRADAY_SNAPSHOT_DIR / f"rotation_{label}.json"
+    if not filepath.exists():
+        return pd.DataFrame()
+    with open(filepath, 'r') as f:
+        data = json.load(f)
+    return pd.DataFrame(data['data'])
+
+
+def get_previous_snapshot_label() -> str | None:
+    """Find the most recent intraday snapshot for today."""
+    today_prefix = datetime.now().strftime('%Y%m%d')
+    snapshots = sorted(INTRADAY_SNAPSHOT_DIR.glob(f"rotation_{today_prefix}_*.json"),
+                       reverse=True)
+    if not snapshots:
+        return None
+    # Extract label from filename: rotation_YYYYMMDD_HHMM.json → YYYYMMDD_HHMM
+    return snapshots[0].stem.replace('rotation_', '')
+
+
+def detect_rotation(current_df: pd.DataFrame, previous_df: pd.DataFrame,
+                    top_n: int = ROTATION_TOP_N,
+                    rank_jump: int = ROTATION_RANK_JUMP) -> dict:
+    """
+    Compare two snapshots and detect rotation signals.
+    
+    A rotation signal is a concept that jumped significantly in rank,
+    indicating capital is rotating into/out of it.
+    
+    Args:
+        current_df: Current snapshot with 'ts_code', 'name', 'pct_change', 'rank'
+        previous_df: Previous snapshot with same columns
+        top_n: Only consider concepts in current top N
+        rank_jump: Minimum rank improvement to flag as rotation
+        
+    Returns:
+        dict with 'rising' (moved up), 'falling' (moved down), 'new_entrants', 'summary'
+    """
+    if current_df.empty or previous_df.empty:
+        return {'rising': [], 'falling': [], 'new_entrants': [], 'summary': {}}
+
+    # Build rank maps
+    curr_ranks = dict(zip(current_df['ts_code'], current_df['rank']))
+    prev_ranks = dict(zip(previous_df['ts_code'], previous_df['rank']))
+    curr_names = dict(zip(current_df['ts_code'], current_df['name']))
+    curr_pcts = dict(zip(current_df['ts_code'], current_df['pct_change']))
+    prev_pcts = dict(zip(previous_df['ts_code'], previous_df['pct_change']))
+
+    rising = []
+    falling = []
+    new_entrants = []
+
+    for code, curr_rank in curr_ranks.items():
+        if curr_rank > top_n:
+            continue
+
+        name = curr_names.get(code, '')
+        curr_pct = curr_pcts.get(code, 0)
+        prev_pct = prev_pcts.get(code, 0)
+
+        if code not in prev_ranks:
+            # New entrant to the rankings
+            new_entrants.append({
+                'ts_code': code,
+                'name': name,
+                'rank': curr_rank,
+                'pct_change': curr_pct,
+            })
+            continue
+
+        prev_rank = prev_ranks[code]
+        rank_delta = prev_rank - curr_rank  # positive = moved up
+
+        if rank_delta >= rank_jump:
+            rising.append({
+                'ts_code': code,
+                'name': name,
+                'prev_rank': prev_rank,
+                'curr_rank': curr_rank,
+                'rank_delta': rank_delta,
+                'pct_change': curr_pct,
+                'prev_pct': prev_pct,
+                'pct_delta': round(curr_pct - prev_pct, 2),
+            })
+        elif rank_delta <= -rank_jump:
+            falling.append({
+                'ts_code': code,
+                'name': name,
+                'prev_rank': prev_rank,
+                'curr_rank': curr_rank,
+                'rank_delta': rank_delta,
+                'pct_change': curr_pct,
+                'prev_pct': prev_pct,
+                'pct_delta': round(curr_pct - prev_pct, 2),
+            })
+
+    # Sort by magnitude of rank change
+    rising.sort(key=lambda x: x['rank_delta'], reverse=True)
+    falling.sort(key=lambda x: x['rank_delta'])
+
+    return {
+        'rising': rising,
+        'falling': falling,
+        'new_entrants': new_entrants,
+        'summary': {
+            'current_snapshot_count': len(current_df),
+            'previous_snapshot_count': len(previous_df),
+            'rising_count': len(rising),
+            'falling_count': len(falling),
+            'new_entrant_count': len(new_entrants),
+        },
+    }
+
+
+def format_rotation(rotation: dict, label: str = '') -> str:
+    """Format rotation detection results for Telegram."""
+    lines = []
+    now_str = label or datetime.now().strftime('%H:%M')
+    lines.append(f"🔄 **盘中轮动检测** ({now_str})")
+
+    rising = rotation.get('rising', [])
+    falling = rotation.get('falling', [])
+    new_entrants = rotation.get('new_entrants', [])
+    summary = rotation.get('summary', {})
+
+    if not rising and not falling and not new_entrants:
+        lines.append("无显著轮动信号")
+        return '\n'.join(lines)
+
+    lines.append(f"排名跳升≥{ROTATION_RANK_JUMP}位 | "
+                 f"🔺{summary.get('rising_count', 0)} "
+                 f"🔻{summary.get('falling_count', 0)} "
+                 f"🆕{summary.get('new_entrant_count', 0)}")
+    lines.append("")
+
+    if rising:
+        lines.append("**🔺 资金轮入（排名大幅上升）:**")
+        for r in rising[:8]:
+            lines.append(f"• {r['name']} "
+                         f"#{r['prev_rank']}→#{r['curr_rank']} (↑{r['rank_delta']}位) "
+                         f"{r['pct_change']:+.2f}%")
+        lines.append("")
+
+    if falling:
+        lines.append("**🔻 资金轮出（排名大幅下降）:**")
+        for f in falling[:5]:
+            lines.append(f"• {f['name']} "
+                         f"#{f['prev_rank']}→#{f['curr_rank']} (↓{abs(f['rank_delta'])}位) "
+                         f"{f['pct_change']:+.2f}%")
+        lines.append("")
+
+    if new_entrants:
+        top_new = sorted(new_entrants, key=lambda x: x['rank'])[:5]
+        lines.append("**🆕 新进前50:**")
+        for n in top_new:
+            lines.append(f"• {n['name']} #{n['rank']} ({n['pct_change']:+.2f}%)")
+        lines.append("")
+
+    return '\n'.join(lines)
+
+
+def run_rotation_detection(pro, save_snapshot: bool = True) -> tuple[dict, str]:
+    """
+    Run a full rotation detection cycle:
+    1. Fetch current concept price rankings
+    2. Load previous snapshot (if any)
+    3. Compare and detect rotation
+    4. Save current snapshot
+    
+    Returns: (rotation_dict, formatted_text)
+    """
+    # 1. Get current rankings
+    current_df = fetch_concept_price_rankings(pro)
+    if current_df.empty:
+        return {}, "⚠️ 无法获取概念排名数据"
+
+    # 2. Load previous snapshot
+    prev_label = get_previous_snapshot_label()
+    previous_df = pd.DataFrame()
+    if prev_label:
+        previous_df = load_intraday_snapshot(prev_label)
+
+    # 3. Save current snapshot
+    current_label = datetime.now().strftime('%Y%m%d_%H%M')
+    if save_snapshot:
+        save_intraday_snapshot(current_df, current_label)
+
+    # 4. Detect rotation
+    if previous_df.empty:
+        return {
+            'rising': [], 'falling': [], 'new_entrants': [],
+            'summary': {'note': '首次快照，无对比数据'},
+        }, f"📸 首次轮动快照已保存 ({current_label}), 共{len(current_df)}个概念"
+
+    rotation = detect_rotation(current_df, previous_df)
+    text = format_rotation(rotation, label=f"{prev_label.split('_')[-1]}→{current_label.split('_')[-1]}")
+    return rotation, text
+
+
+# ============================================================
+# 6. Formatted Output
 # ============================================================
 def format_analysis(
     flow_df: pd.DataFrame,
@@ -536,6 +821,8 @@ def main():
     parser.add_argument('--compare', action='store_true', help='包含日度对比')
     parser.add_argument('--full', action='store_true', help='完整分析 (对比+趋势)')
     parser.add_argument('--save', action='store_true', help='保存快照到文件')
+    parser.add_argument('--rotation', action='store_true', help='盘中轮动检测')
+    parser.add_argument('--snapshot', action='store_true', help='保存轮动快照 (配合--rotation)')
     args = parser.parse_args()
 
     if args.full:
@@ -543,6 +830,14 @@ def main():
         args.trend = True
 
     pro = get_pro()
+
+    # Handle rotation detection (standalone mode)
+    if args.rotation:
+        rotation_result, rotation_text = run_rotation_detection(pro, save_snapshot=args.snapshot)
+        print(rotation_text)
+        if args.json:
+            print(json.dumps(rotation_result, ensure_ascii=False, indent=2))
+        return 0
 
     # Determine trade date
     if args.date:
