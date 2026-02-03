@@ -27,6 +27,12 @@ from src.perception.signals import (
 from src.perception.sources.base import DataSource, SourceType
 from src.perception.sources.registry import SourceRegistry
 from src.perception.detectors.base import Detector
+from src.perception.aggregator import (
+    AggregatorConfig,
+    AggregationReport,
+    AssetSignalSummary,
+    SignalAggregator,
+)
 
 __all__ = [
     # Events
@@ -53,4 +59,9 @@ __all__ = [
     "SourceRegistry",
     # Detectors
     "Detector",
+    # Aggregator
+    "AggregatorConfig",
+    "AggregationReport",
+    "AssetSignalSummary",
+    "SignalAggregator",
 ]

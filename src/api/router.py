@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from src.api import routes_candles, routes_meta, routes_tasks, routes_status, routes_watchlist, routes_realtime, routes_index, routes_concepts, routes_evaluations, routes_klines, routes_admin, routes_simulated, routes_earnings, routes_sectors, routes_concept_monitor_v2, routes_tonghuashun, routes_news, routes_us_stock, routes_screener, routes_rotation, routes_pattern, routes_sentiment, routes_anomaly, routes_crypto, routes_crypto_ws
+from src.api import routes_candles, routes_meta, routes_tasks, routes_status, routes_watchlist, routes_realtime, routes_index, routes_concepts, routes_evaluations, routes_simulated, routes_earnings, routes_sectors, routes_concept_monitor_v2, routes_news, routes_us_stock, routes_screener, routes_rotation, routes_pattern, routes_sentiment, routes_anomaly, routes_crypto, routes_crypto_ws
 
 api_router = APIRouter()
 
@@ -13,13 +13,12 @@ api_router.include_router(routes_realtime.router, prefix="/realtime", tags=["rea
 api_router.include_router(routes_index.router, prefix="/index", tags=["index"])
 api_router.include_router(routes_concepts.router, prefix="/concepts", tags=["concepts"])
 api_router.include_router(routes_evaluations.router, prefix="/evaluations", tags=["evaluations"])
-api_router.include_router(routes_klines.router, prefix="/klines", tags=["klines"])
-api_router.include_router(routes_admin.router, prefix="/admin", tags=["admin"])
+# routes_klines removed in Phase 0+1 refactor
+# routes_admin removed in Phase 0+1 refactor
 api_router.include_router(routes_simulated.router, prefix="/simulated", tags=["simulated"])
 api_router.include_router(routes_earnings.router, prefix="/earnings", tags=["earnings"])
 api_router.include_router(routes_sectors.router, prefix="/sectors", tags=["sectors"])
 api_router.include_router(routes_concept_monitor_v2.router, prefix="/concept-monitor", tags=["concept-monitor"])
-api_router.include_router(routes_tonghuashun.router)
 api_router.include_router(routes_news.router, prefix="/news", tags=["news"])
 api_router.include_router(routes_us_stock.router, prefix="/us-stock", tags=["us-stock"])
 api_router.include_router(routes_crypto.router, prefix="/crypto", tags=["crypto"])
