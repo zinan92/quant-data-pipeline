@@ -267,7 +267,10 @@ def format_session_review(date_str: str = None) -> str:
 
     # Determine session label
     last_label = sorted_labels[-1]
-    last_t = int(last_label)
+    try:
+        last_t = int(last_label)
+    except ValueError:
+        last_t = 0  # 非数字标签 (如 "test") 默认盘中
     if last_t >= 1500:
         session_title = "全天回顾"
     elif last_t >= 1300:
