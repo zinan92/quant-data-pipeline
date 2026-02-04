@@ -18,7 +18,7 @@ from pathlib import Path
 # ── Config ───────────────────────────────────────────────────
 DATABASE_ID = "2fdf137e-7fdf-81ad-886d-c6fb1b264ce3"
 API_KEY_PATH = Path.home() / ".config" / "notion" / "api_key"
-NOTION_VERSION = "2022-06-28"
+NOTION_VERSION = "2025-09-03"
 NOTION_BASE = "https://api.notion.com/v1"
 MAX_RT_CHARS = 1900  # Notion limit is 2000, leave margin
 
