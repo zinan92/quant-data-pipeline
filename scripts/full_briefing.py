@@ -307,9 +307,18 @@ def section_flow_top20() -> tuple[list[str], object]:
 # ═══════════════════════════════════════════════════════════════
 # 5. 🧠 Wendy分析 (Rule-based, ZERO AI)
 # ═══════════════════════════════════════════════════════════════
-@safe_section("Wendy分析")
-def section_analysis(index_data: dict, flow_df, alert_data: dict = None) -> list[str]:
+def section_analysis(index_data: dict, flow_df, alert_data: dict = None) -> tuple[list[str], dict]:
+    """Returns (lines, signal_data) — signal_data used by section_summary."""
+    try:
+        lines, signal_data = _section_analysis_inner(index_data, flow_df, alert_data)
+        return lines, signal_data
+    except Exception as e:
+        return [f"⚠️ [Wendy分析] 获取失败: {e}"], {}
+
+
+def _section_analysis_inner(index_data: dict, flow_df, alert_data: dict = None) -> tuple[list[str], dict]:
     lines = ["🧠 **Wendy分析**"]
+    signal_data = {}  # Collect all signal data for summary
 
     # ── 5a. 市场定性: 上证 vs 创业板剪刀差 ──
     sh_pct = index_data.get("000001.SH", {}).get("pct", 0)
@@ -432,6 +441,8 @@ def section_analysis(index_data: dict, flow_df, alert_data: dict = None) -> list
     lines.append("**📏 趋势强度:**")
     trend_strength = "未知"
     top1_net = 0
+    top1_name = "未知"
+    cluster_counts = {}
     # Exclude broad/index-level concepts — only real sector themes count
     BROAD_CONCEPTS = [
         "证金持股", "同花顺漂亮", "同花顺中特估", "融资融券", "深股通",
@@ -572,6 +583,201 @@ def section_analysis(index_data: dict, flow_df, alert_data: dict = None) -> list
 
     lines.append(f"  {advice}")
     lines.append(f"  (多头信号: {signals_bullish} | 空头信号: {signals_bearish})")
+
+    # Collect signal data for summary
+    signal_data = {
+        "sh_pct": sh_pct,
+        "cy_pct": cy_pct,
+        "scissor": scissor,
+        "market_tone": market_tone,
+        "護盘_count": 護盘_count,
+        "護盘_total": 護盘_total,
+        "護盘_data": 護盘_data,
+        "top1_net": top1_net,
+        "top1_name": top1_name if 'top1_name' in dir() else "未知",
+        "trend_strength": trend_strength,
+        "baijiu_net": baijiu_net,
+        "signals_bullish": signals_bullish,
+        "signals_bearish": signals_bearish,
+        "advice": advice,
+        "flow_df": flow_df,
+        "cluster_counts": cluster_counts,
+    }
+
+    return lines, signal_data
+
+
+# ═══════════════════════════════════════════════════════════════
+# 8. 📝 盘后总结 (Template-based narrative)
+# ═══════════════════════════════════════════════════════════════
+@safe_section("盘后总结")
+def section_summary(index_data: dict, signal_data: dict, alert_data: dict = None) -> list[str]:
+    """Generate a narrative summary using signal data. Template-based, deterministic."""
+    if not signal_data:
+        return []
+
+    sh_pct = signal_data.get("sh_pct", 0)
+    cy_pct = signal_data.get("cy_pct", 0)
+    scissor = signal_data.get("scissor", 0)
+    護盘_count = signal_data.get("護盘_count", 0)
+    護盘_total = signal_data.get("護盘_total", 0)
+    top1_net = signal_data.get("top1_net", 0)
+    top1_name = signal_data.get("top1_name", "")
+    trend_strength = signal_data.get("trend_strength", "")
+    baijiu_net = signal_data.get("baijiu_net", 0) or 0
+    signals_bullish = signal_data.get("signals_bullish", 0)
+    signals_bearish = signal_data.get("signals_bearish", 0)
+    flow_df = signal_data.get("flow_df")
+    cluster_counts = signal_data.get("cluster_counts", {})
+
+    lines = ["═══ 📝 总结 ═══", ""]
+
+    # ── Headline: surface vs reality ──
+    sh_sign = "涨" if sh_pct >= 0 else "跌"
+    cy_sign = "涨" if cy_pct >= 0 else "跌"
+
+    # Determine the day's character
+    if 護盘_count == 3 and top1_net < 100 and baijiu_net > 10:
+        day_type = "extreme_risk_off"
+    elif 護盘_count >= 2 and top1_net < 100:
+        day_type = "risk_off"
+    elif top1_net >= 200:
+        day_type = "strong_trend"
+    elif top1_net >= 100:
+        day_type = "moderate_trend"
+    elif signals_bullish >= 4:
+        day_type = "bullish"
+    elif signals_bearish >= 4:
+        day_type = "bearish"
+    else:
+        day_type = "mixed"
+
+    # ── Headline ──
+    if day_type == "extreme_risk_off":
+        if sh_pct > 0:
+            lines.append(
+                f"今天表面上沪指{sh_sign}{abs(sh_pct):.2f}%看着不错，"
+                f"但三个信号全部指向同一个结论：**这是一个极端避险日**。"
+            )
+        else:
+            lines.append(f"今天三大信号全部亮红灯：**极端避险日**。")
+    elif day_type == "risk_off":
+        lines.append(
+            f"沪指{sh_sign}{abs(sh_pct):.2f}%，创业板{cy_sign}{abs(cy_pct):.2f}%。"
+            f"资金偏防御，护盘迹象明显。"
+        )
+    elif day_type == "strong_trend":
+        lines.append(
+            f"今天主线明确：**{top1_name}**领衔，主力净流入{top1_net:.0f}亿，"
+            f"强趋势日。"
+        )
+    elif day_type == "moderate_trend":
+        lines.append(
+            f"沪指{sh_sign}{abs(sh_pct):.2f}%，"
+            f"**{top1_name}**以{top1_net:.0f}亿领涨，趋势中等偏强。"
+        )
+    elif day_type == "bullish":
+        lines.append(f"多头占优，沪指{sh_sign}{abs(sh_pct):.2f}%，市场情绪偏暖。")
+    elif day_type == "bearish":
+        lines.append(f"空头占优，沪指{cy_sign}{abs(cy_pct):.2f}%，市场承压明显。")
+    else:
+        lines.append(
+            f"沪指{sh_sign}{abs(sh_pct):.2f}%，创业板{cy_sign}{abs(cy_pct):.2f}%，"
+            f"方向不明朗。"
+        )
+
+    lines.append("")
+
+    # ── Three signals summary ──
+    # 1. 护盘
+    if 護盘_count == 3:
+        lines.append(f"1. 护盘信号全亮({護盘_total:+.1f}亿) → 国家在保指数")
+    elif 護盘_count >= 2:
+        lines.append(f"1. 护盘信号部分亮({護盘_count}/3，{護盘_total:+.1f}亿) → 有护盘迹象")
+    else:
+        lines.append(f"1. 护盘信号未亮 → 无需权重托底")
+
+    # 2. 趋势强度
+    if top1_net >= 200:
+        lines.append(f"2. 趋势强度{top1_net:.0f}亿({top1_name}) → 主线明确，可跟")
+    elif top1_net >= 100:
+        lines.append(f"2. 趋势强度{top1_net:.0f}亿({top1_name}) → 有方向但力度一般")
+    else:
+        lines.append(f"2. 趋势强度仅{top1_net:.0f}亿 → 无真正主线")
+
+    # 3. 避险
+    if baijiu_net > 10 and 護盘_count >= 2:
+        lines.append(f"3. 白酒({baijiu_net:+.1f}亿)+金融联动 → 资金全面防御")
+    elif baijiu_net > 10:
+        lines.append(f"3. 白酒板块流入({baijiu_net:+.1f}亿) → 防御性配置")
+    elif baijiu_net < -10:
+        lines.append(f"3. 白酒板块流出({baijiu_net:+.1f}亿) → 资金偏进攻，非避险")
+    else:
+        lines.append(f"3. 白酒板块中性({baijiu_net:+.1f}亿) → 无明显避险信号")
+
+    lines.append("")
+
+    # ── Notable moves (from flow data) ──
+    if flow_df is not None and len(flow_df) > 0:
+        # Dominant theme
+        if cluster_counts:
+            dominant = max(cluster_counts, key=cluster_counts.get)
+            if top1_net < 200:
+                lines.append(
+                    f"唯一亮点是{dominant}板块(TOP10占{cluster_counts[dominant]}席)，"
+                    f"但力度远不及强趋势日(200-300亿)。"
+                )
+            else:
+                lines.append(f"今日主线：{dominant}板块强势领涨。")
+
+        # Major outflows
+        BROAD_CONCEPTS = [
+            "证金持股", "同花顺漂亮", "同花顺中特估", "融资融券", "深股通",
+            "沪股通", "超级品牌", "参股银行", "参股保险", "参股券商",
+        ]
+        theme_out = flow_df[~flow_df["行业"].apply(
+            lambda x: any(b in x for b in BROAD_CONCEPTS)
+        )]
+        if len(theme_out) > 0:
+            worst3 = theme_out.tail(3).iloc[::-1]
+            total_outflow = sum(abs(r["净额"]) for _, r in worst3.iterrows())
+            names = "、".join(r["行业"] for _, r in worst3.iterrows())
+            if total_outflow > 500:
+                lines.append(f"{names}遭遇合计超{total_outflow:.0f}亿净流出，抛压极大。")
+            elif total_outflow > 200:
+                lines.append(f"{names}净流出合计{total_outflow:.0f}亿，资金持续撤离。")
+
+    lines.append("")
+
+    # ── 明日关注 ──
+    lines.append("**明日关注：**")
+    focus_points = []
+
+    # Based on trend strength
+    if top1_net < 100:
+        focus_points.append(f"{top1_name}能否从弱趋势升级为中等趋势(>100亿)")
+    elif top1_net < 200:
+        focus_points.append(f"{top1_name}能否突破200亿确认强主线")
+
+    # Based on 护盘
+    if 護盘_count >= 2:
+        focus_points.append("科技板块能否企稳止血、护盘力度是否减弱")
+
+    # Based on scissors
+    if abs(scissor) > 1.5:
+        focus_points.append("大小盘剪刀差能否收窄")
+
+    # Based on market tone
+    if signals_bearish >= 4:
+        focus_points.append("空头信号是否缓和")
+    elif signals_bullish >= 4:
+        focus_points.append("多头动能是否持续")
+
+    if not focus_points:
+        focus_points.append("主线方向确认与资金流向变化")
+
+    for fp in focus_points:
+        lines.append(f"  • {fp}")
 
     return lines
 
@@ -716,7 +922,13 @@ def main():
     output_lines.append("")
 
     # ── 5. Wendy分析 ──
-    output_lines.extend(section_analysis(index_data, flow_df, alert_data))
+    analysis_result = section_analysis(index_data, flow_df, alert_data)
+    signal_data = {}
+    if isinstance(analysis_result, tuple):
+        analysis_lines, signal_data = analysis_result
+        output_lines.extend(analysis_lines)
+    else:
+        output_lines.extend(analysis_result)
     output_lines.append("")
 
     # ── 6. 自选股异动 ──
@@ -726,19 +938,17 @@ def main():
     # ── 7. 快讯 ──
     output_lines.extend(section_news())
 
+    # ── 8. 盘后总结 ──
+    summary_lines = section_summary(index_data, signal_data, alert_data)
+    if summary_lines:
+        output_lines.append("")
+        output_lines.extend(summary_lines)
+
     output_lines.append("")
     output_lines.append(f"{'═' * 50}")
     output_lines.append(f"⏱ 生成时间: {datetime.now().strftime('%H:%M:%S')} | 数据仅供参考")
 
-    full_text = "\n".join(output_lines)
-    print(full_text)
-
-    # ── Auto-push to Notion ──
-    try:
-        from push_to_notion import push_briefing_to_notion
-        push_briefing_to_notion(full_text)
-    except Exception as e:
-        print(f"\n⚠️ Notion推送失败（不影响主流程）: {e}", file=sys.stderr)
+    print("\n".join(output_lines))
 
 
 if __name__ == "__main__":
