@@ -1,46 +1,64 @@
 #!/usr/bin/env python3
 """
-美股简报 v3 — 完整版（模块化 + 规则引擎分析）
+美股简报 v3 — 完整版（模块化 + 规则引擎分析 + 盘后总结）
 =============================================
 用法: python scripts/us_briefing_v2.py [--time]
 
 模块:
-1. 三大指数 + VIX          — /api/us-stock/indexes
-2. 板块表现                — /api/us-stock/sectors
-3. Mag7 + 重点个股         — /api/us-stock/mag7
-4. 中概股 ADR              — /api/us-stock/china-adr
-5. 商品（黄金白银原油铜）     — /api/us-stock/commodities
-6. 债券收益率（10Y/5Y/30Y） — /api/us-stock/bonds
-7. 美元指数/外汇           — /api/us-stock/forex
-8. 重要新闻/快讯           — /api/news/latest
-9. 🧠 Wendy分析           — 规则引擎，纯确定性
-10. 经济日历（如有）         — /api/us-stock/calendar
+1.  三大指数 + VIX             — /api/us-stock/indexes
+2.  板块表现（ETF + 广度）      — /api/us-stock/sectors
+3.  Mag7 七巨头                — /api/us-stock/mag7
+4.  中概股 ADR                 — /api/us-stock/china-adr
+5.  商品（贵金属/能源/工业）     — /api/us-stock/commodities
+6.  美债收益率 + 利差           — /api/us-stock/bonds
+7.  美元指数 / 外汇             — /api/us-stock/forex
+8.  盘中全程回顾                — 指数快照时间线
+9.  📰 快讯                    — /api/news/latest
+10. 🧠 Wendy分析               — 规则引擎分析
+11. 📝 盘后总结                — 模板化叙事总结
+12. 📅 经济日历                — /api/us-stock/calendar
 
 数据源: ashare API http://127.0.0.1:8000
 """
 
 import sys
+import json
 import argparse
 import requests
+import time as time_mod
 from datetime import datetime
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 # ── Config ───────────────────────────────────────────────────
 API_BASE = "http://127.0.0.1:8000"
-REQUEST_TIMEOUT = 5
+REQUEST_TIMEOUT = 10  # Increased from 5
+CONNECT_TIMEOUT = 3   # Increased from 2
+MAX_RETRIES = 2
+
+PROJECT_ROOT = Path(__file__).parent.parent
+SNAPSHOT_FILE = PROJECT_ROOT / "data" / "snapshots" / "intraday" / "us_index_snapshots.json"
+SNAPSHOT_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 
 # ═══════════════════════════════════════════════════════════════
-# Helper: safe fetch wrapper
+# Helper: safe fetch with retry
 # ═══════════════════════════════════════════════════════════════
 def fetch(endpoint: str) -> dict:
-    """Fetch JSON from API. Returns {} on failure."""
-    try:
-        r = requests.get(f"{API_BASE}{endpoint}", timeout=(2, REQUEST_TIMEOUT))
-        return r.json() if r.ok else {}
-    except Exception:
-        return {}
+    """Fetch JSON from API with retry. Returns {} on failure."""
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            r = requests.get(
+                f"{API_BASE}{endpoint}",
+                timeout=(CONNECT_TIMEOUT, REQUEST_TIMEOUT),
+            )
+            if r.ok:
+                return r.json()
+        except Exception:
+            if attempt < MAX_RETRIES:
+                time_mod.sleep(0.3)
+    return {}
 
 
 def safe_section(name: str):
@@ -56,19 +74,16 @@ def safe_section(name: str):
 
 
 def pct_icon(pct: float) -> str:
-    """Return colored icon for percentage change."""
     return "🟢" if pct >= 0 else "🔴"
 
 
 def format_price(price: float, decimals: int = 2) -> str:
-    """Format price with comma separator."""
     if price >= 1000:
         return f"{price:,.{decimals}f}"
     return f"{price:.{decimals}f}"
 
 
 def format_market_cap(cap: float) -> str:
-    """Format market cap to human-readable."""
     if cap >= 1e12:
         return f"{cap / 1e12:.2f}T"
     elif cap >= 1e9:
@@ -76,6 +91,38 @@ def format_market_cap(cap: float) -> str:
     elif cap >= 1e6:
         return f"{cap / 1e6:.0f}M"
     return ""
+
+
+# ═══════════════════════════════════════════════════════════════
+# 0. Save index snapshot (side effect, runs every time)
+# ═══════════════════════════════════════════════════════════════
+def save_index_snapshot(quotes: list):
+    """Save current index prices as a snapshot point."""
+    try:
+        if SNAPSHOT_FILE.exists():
+            data = json.loads(SNAPSHOT_FILE.read_text())
+            if data.get("date") != datetime.now().strftime("%Y-%m-%d"):
+                data = {"date": datetime.now().strftime("%Y-%m-%d"), "snapshots": []}
+        else:
+            data = {"date": datetime.now().strftime("%Y-%m-%d"), "snapshots": []}
+
+        now_time = datetime.now().strftime("%H:%M")
+        existing = {s["time"] for s in data["snapshots"]}
+        if now_time in existing:
+            return
+
+        entry = {"time": now_time, "indexes": {}}
+        for q in quotes:
+            if q["symbol"] in ("^GSPC", "^DJI", "^IXIC", "^NDX", "^VIX"):
+                entry["indexes"][q["symbol"]] = {
+                    "name": q.get("cn_name") or q["name"],
+                    "price": q["price"],
+                    "pct": q["change_pct"],
+                }
+        data["snapshots"].append(entry)
+        SNAPSHOT_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    except Exception:
+        pass
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -88,7 +135,6 @@ def section_indexes(data: dict) -> list[str]:
     if not quotes:
         return lines + ["  数据暂无"]
 
-    # Separate VIX from main indexes
     main_indexes = []
     vix = None
     for q in quotes:
@@ -108,21 +154,22 @@ def section_indexes(data: dict) -> list[str]:
         lines.append(f"  {icon} {name}: {price} ({q['change_pct']:+.2f}%){vol_str}")
 
     if vix:
-        vix_level = vix["price"]
-        vix_emoji = "🟢"
-        if vix_level >= 30:
-            vix_emoji = "🔴🔴"
-        elif vix_level >= 25:
-            vix_emoji = "🔴"
-        elif vix_level >= 20:
-            vix_emoji = "🟡"
-        lines.append(f"  {vix_emoji} VIX恐慌指数: {vix_level:.2f} ({vix['change_pct']:+.2f}%)")
+        vl = vix["price"]
+        if vl >= 30:
+            ve = "🔴🔴"
+        elif vl >= 25:
+            ve = "🔴"
+        elif vl >= 20:
+            ve = "🟡"
+        else:
+            ve = "🟢"
+        lines.append(f"  {ve} VIX恐慌指数: {vl:.2f} ({vix['change_pct']:+.2f}%)")
 
     return lines
 
 
 # ═══════════════════════════════════════════════════════════════
-# 2. 板块表现（按涨跌排序）
+# 2. 板块表现（按涨跌排序 + 广度 + 攻防）
 # ═══════════════════════════════════════════════════════════════
 @safe_section("板块表现")
 def section_sectors(data: dict) -> list[str]:
@@ -131,7 +178,6 @@ def section_sectors(data: dict) -> list[str]:
     if not sectors:
         return lines + ["  数据暂无"]
 
-    # Filter sectors that have ETF data
     etf_sectors = []
     for s in sectors:
         if s.get("etf"):
@@ -148,25 +194,36 @@ def section_sectors(data: dict) -> list[str]:
 
     etf_sectors.sort(key=lambda x: x["pct"], reverse=True)
 
-    # Leaders
-    top = etf_sectors[:3]
-    bot = etf_sectors[-3:]
-
-    lines.append("  📈 领涨:")
-    for s in top:
+    # Show ALL sectors (not just top/bottom 3)
+    for s in etf_sectors:
         icon = pct_icon(s["pct"])
-        lines.append(f"    {icon} {s['name_cn']}({s['symbol']}) {s['pct']:+.2f}%")
+        vol_str = ""
+        if s["volume"] > 0:
+            vol_m = s["volume"] / 1e6
+            vol_str = f" 成交:{vol_m:.0f}M"
+        lines.append(f"  {icon} {s['name_cn']}({s['symbol']}): {s['pct']:+.2f}%{vol_str}")
 
-    lines.append("  📉 领跌:")
-    for s in bot:
-        icon = pct_icon(s["pct"])
-        lines.append(f"    {icon} {s['name_cn']}({s['symbol']}) {s['pct']:+.2f}%")
-
-    # Breadth: count up vs down
+    # Breadth
     up_count = sum(1 for s in etf_sectors if s["pct"] > 0)
     down_count = sum(1 for s in etf_sectors if s["pct"] < 0)
     flat_count = len(etf_sectors) - up_count - down_count
     lines.append(f"  板块广度: {up_count}涨 / {down_count}跌 / {flat_count}平")
+
+    # Offensive vs Defensive
+    defensive_names = {"公用事业", "必需消费", "医疗健康", "房地产"}
+    offensive_names = {"半导体", "可选消费", "通信服务", "金融"}
+    def_pcts = [s["pct"] for s in etf_sectors if s["name_cn"] in defensive_names]
+    off_pcts = [s["pct"] for s in etf_sectors if s["name_cn"] in offensive_names]
+
+    if def_pcts and off_pcts:
+        def_avg = sum(def_pcts) / len(def_pcts)
+        off_avg = sum(off_pcts) / len(off_pcts)
+        if def_avg > off_avg + 0.5:
+            lines.append(f"  🛡️ 防御>进攻（{def_avg:+.2f}% vs {off_avg:+.2f}%）→ 避险情绪")
+        elif off_avg > def_avg + 0.5:
+            lines.append(f"  ⚔️ 进攻>防御（{off_avg:+.2f}% vs {def_avg:+.2f}%）→ 风险偏好高")
+        else:
+            lines.append(f"  ⚖️ 攻防均衡（进攻{off_avg:+.2f}% / 防御{def_avg:+.2f}%）")
 
     return lines
 
@@ -182,24 +239,38 @@ def section_mag7(data: dict) -> list[str]:
         return lines + ["  数据暂无"]
 
     sorted_q = sorted(quotes, key=lambda q: q["change_pct"], reverse=True)
-
-    # Calculate average
-    avg_pct = sum(q["change_pct"] for q in sorted_q) / len(sorted_q) if sorted_q else 0
+    avg_pct = sum(q["change_pct"] for q in sorted_q) / len(sorted_q)
     total_cap = sum(q.get("market_cap", 0) for q in sorted_q)
 
     for q in sorted_q:
         icon = pct_icon(q["change_pct"])
         name = q.get("cn_name") or q["symbol"]
         cap_str = format_market_cap(q.get("market_cap", 0))
-        cap_display = f" [{cap_str}]" if cap_str else ""
+        vol_str = ""
+        if q.get("volume") and q["volume"] > 0:
+            vol_m = q["volume"] / 1e6
+            vol_str = f" 成交:{vol_m:.0f}M"
         lines.append(
             f"  {icon} {name}({q['symbol']}): ${format_price(q['price'])} "
-            f"({q['change_pct']:+.2f}%){cap_display}"
+            f"({q['change_pct']:+.2f}%) [{cap_str}]{vol_str}"
         )
 
     icon_avg = pct_icon(avg_pct)
     total_cap_str = format_market_cap(total_cap)
-    lines.append(f"  {icon_avg} Mag7均涨幅: {avg_pct:+.2f}% | 总市值: {total_cap_str}")
+    up_count = sum(1 for q in sorted_q if q["change_pct"] > 0)
+    down_count = len(sorted_q) - up_count
+    lines.append(f"  {icon_avg} Mag7: {up_count}涨/{down_count}跌 均涨幅{avg_pct:+.2f}% | 总市值{total_cap_str}")
+
+    # Spread analysis
+    best = sorted_q[0]
+    worst = sorted_q[-1]
+    spread = best["change_pct"] - worst["change_pct"]
+    if spread > 5:
+        lines.append(f"  ⚠️ 内部分化{spread:.1f}%：{best.get('cn_name', best['symbol'])}领涨 vs {worst.get('cn_name', worst['symbol'])}领跌，事件驱动")
+    elif avg_pct > 1:
+        lines.append(f"  🟢 巨头整体强势，科技牛市基调不变")
+    elif avg_pct < -1:
+        lines.append(f"  🔴 巨头整体疲弱，拖累指数权重")
 
     return lines
 
@@ -215,24 +286,30 @@ def section_china_adr(data: dict) -> list[str]:
         return lines + ["  数据暂无"]
 
     sorted_q = sorted(quotes, key=lambda q: q["change_pct"], reverse=True)
-    avg_pct = sum(q["change_pct"] for q in sorted_q) / len(sorted_q) if sorted_q else 0
+    avg_pct = sum(q["change_pct"] for q in sorted_q) / len(sorted_q)
 
     for q in sorted_q:
         icon = pct_icon(q["change_pct"])
         name = q.get("cn_name") or q["symbol"]
+        vol_str = ""
+        if q.get("volume") and q["volume"] > 0:
+            vol_m = q["volume"] / 1e6
+            vol_str = f" 成交:{vol_m:.0f}M"
         lines.append(
             f"  {icon} {name}({q['symbol']}): ${format_price(q['price'])} "
-            f"({q['change_pct']:+.2f}%)"
+            f"({q['change_pct']:+.2f}%){vol_str}"
         )
 
     icon_avg = pct_icon(avg_pct)
-    lines.append(f"  {icon_avg} 中概股均涨幅: {avg_pct:+.2f}%")
+    up_count = sum(1 for q in sorted_q if q["change_pct"] > 0)
+    down_count = len(sorted_q) - up_count
+    lines.append(f"  {icon_avg} 中概股: {up_count}涨/{down_count}跌 均涨幅{avg_pct:+.2f}%")
 
     return lines
 
 
 # ═══════════════════════════════════════════════════════════════
-# 5. 商品（黄金白银原油铜天然气）
+# 5. 商品（贵金属 / 能源 / 工业金属）
 # ═══════════════════════════════════════════════════════════════
 @safe_section("商品")
 def section_commodities(data: dict) -> list[str]:
@@ -241,27 +318,22 @@ def section_commodities(data: dict) -> list[str]:
     if not commodities:
         return lines + ["  数据暂无"]
 
-    # Group by type for readability
-    precious = []  # gold, silver
-    energy = []    # oil, gas
-    industrial = []  # copper
-
+    precious, energy, industrial = [], [], []
     for c in commodities:
-        symbol = c["symbol"]
         entry = {
             "cn_name": c.get("cn_name") or c["name"],
+            "symbol": c["symbol"],
             "price": c["price"],
             "pct": c.get("change_pct", 0),
-            "change": c.get("change", 0),
         }
-        if symbol in ("GC=F", "SI=F"):
+        if c["symbol"] in ("GC=F", "SI=F"):
             precious.append(entry)
-        elif symbol in ("CL=F", "BZ=F", "NG=F"):
+        elif c["symbol"] in ("CL=F", "BZ=F", "NG=F"):
             energy.append(entry)
-        elif symbol in ("HG=F",):
+        elif c["symbol"] in ("HG=F",):
             industrial.append(entry)
         else:
-            energy.append(entry)  # fallback
+            energy.append(entry)
 
     if precious:
         parts = []
@@ -284,11 +356,19 @@ def section_commodities(data: dict) -> list[str]:
             parts.append(f"{icon}{c['cn_name']} ${format_price(c['price'])} ({c['pct']:+.2f}%)")
         lines.append(f"  工业金属: {' | '.join(parts)}")
 
+    # Gold/Silver ratio
+    gold_p = next((c["price"] for c in precious if c["symbol"] == "GC=F"), 0)
+    silver_p = next((c["price"] for c in precious if c["symbol"] == "SI=F"), 0)
+    if gold_p > 0 and silver_p > 0:
+        gs_ratio = gold_p / silver_p
+        label = "偏高→避险" if gs_ratio > 80 else "偏低→工业需求旺" if gs_ratio < 60 else "正常"
+        lines.append(f"  📊 金银比: {gs_ratio:.1f} ({label})")
+
     return lines
 
 
 # ═══════════════════════════════════════════════════════════════
-# 6. 债券收益率
+# 6. 美债收益率 + 利差
 # ═══════════════════════════════════════════════════════════════
 @safe_section("债券")
 def section_bonds(data: dict) -> list[str]:
@@ -297,28 +377,34 @@ def section_bonds(data: dict) -> list[str]:
     if not bonds:
         return lines + ["  数据暂无"]
 
-    # Map by symbol for analysis
     bond_map = {}
     for b in bonds:
         bond_map[b["symbol"]] = b
-
-    for b in bonds:
         icon = pct_icon(b.get("change_pct", 0))
         name = b.get("cn_name") or b["name"]
         lines.append(f"  {icon} {name}: {b['price']:.3f}% ({b.get('change_pct', 0):+.2f}%)")
 
-    # Yield spread: 10Y - 5Y (proxy for 10Y-2Y since API has 5Y)
-    tnx = bond_map.get("^TNX")  # 10Y
-    fvx = bond_map.get("^FVX")  # 5Y
+    tnx = bond_map.get("^TNX")
+    fvx = bond_map.get("^FVX")
+    tyx = bond_map.get("^TYX")
+
     if tnx and fvx:
         spread_10_5 = tnx["price"] - fvx["price"]
-        spread_label = "正常" if spread_10_5 > 0 else "⚠️ 倒挂"
-        lines.append(f"  📐 10Y-5Y利差: {spread_10_5:+.3f}% ({spread_label})")
-
-    tyx = bond_map.get("^TYX")  # 30Y
+        label = "正常" if spread_10_5 > 0 else "⚠️ 倒挂"
+        lines.append(f"  📐 10Y-5Y利差: {spread_10_5:+.3f}% ({label})")
     if tyx and tnx:
         spread_30_10 = tyx["price"] - tnx["price"]
         lines.append(f"  📐 30Y-10Y利差: {spread_30_10:+.3f}%")
+
+    # Yield level commentary
+    if tnx:
+        y10 = tnx["price"]
+        if y10 > 5.0:
+            lines.append(f"  🔴 10Y > 5%：紧缩环境，股市承压")
+        elif y10 > 4.5:
+            lines.append(f"  🟡 10Y > 4.5%：利率偏高，关注通胀数据")
+        elif y10 < 3.5:
+            lines.append(f"  🟢 10Y < 3.5%：宽松预期，利好成长股")
 
     return lines
 
@@ -338,11 +424,98 @@ def section_forex(data: dict) -> list[str]:
         name = f.get("cn_name") or f["name"]
         lines.append(f"  {icon} {name}: {f['price']:.3f} ({f.get('change_pct', 0):+.2f}%)")
 
+    # Dollar strength commentary
+    dxy = next((f for f in forex if f["symbol"] == "DX-Y.NYB"), None)
+    if dxy:
+        p = dxy["price"]
+        if p > 105:
+            lines.append(f"  💪 美元强势 → 压制商品/新兴市场")
+        elif p < 95:
+            lines.append(f"  📉 美元弱势 → 利好商品/新兴市场")
+
     return lines
 
 
 # ═══════════════════════════════════════════════════════════════
-# 8. 重要新闻/快讯
+# 8. 盘中全程回顾（指数快照时间线）
+# ═══════════════════════════════════════════════════════════════
+@safe_section("盘中回顾")
+def section_intraday_table() -> list[str]:
+    if not SNAPSHOT_FILE.exists():
+        return []
+
+    data = json.loads(SNAPSHOT_FILE.read_text())
+    snapshots = data.get("snapshots", [])
+    if len(snapshots) < 2:
+        return []  # Need at least 2 points to show timeline
+
+    lines = [f"📋 **盘中全程回顾** ({data.get('date', '今日')})"]
+
+    # Track highs/lows
+    idx_tracker = {}
+
+    lines.append(f"{'时间':>6} | {'S&P500':>12} | {'纳斯达克':>12} | {'道琼斯':>12} | {'VIX':>8}")
+    lines.append(f"{'─' * 6} | {'─' * 12} | {'─' * 12} | {'─' * 12} | {'─' * 8}")
+
+    for snap in snapshots:
+        t = snap["time"]
+        idxs = snap.get("indexes", {})
+
+        cols = [f"{t:>6}"]
+        for code in ["^GSPC", "^IXIC", "^DJI"]:
+            idx = idxs.get(code, {})
+            price = idx.get("price", 0)
+            pct = idx.get("pct", 0)
+            if price > 0:
+                sign = "+" if pct >= 0 else ""
+                col_str = f"{sign}{pct:.2f}%"
+                # Track high/low
+                if code not in idx_tracker:
+                    idx_tracker[code] = {
+                        "name": idx.get("name", code),
+                        "high_pct": pct, "high_time": t,
+                        "low_pct": pct, "low_time": t,
+                    }
+                else:
+                    tr = idx_tracker[code]
+                    if pct > tr["high_pct"]:
+                        tr["high_pct"] = pct
+                        tr["high_time"] = t
+                    if pct < tr["low_pct"]:
+                        tr["low_pct"] = pct
+                        tr["low_time"] = t
+            else:
+                col_str = "—"
+            cols.append(f"{col_str:>12}")
+
+        # VIX
+        vix_data = idxs.get("^VIX", {})
+        if vix_data.get("price", 0) > 0:
+            cols.append(f"{vix_data['price']:.2f}".rjust(8))
+        else:
+            cols.append("—".rjust(8))
+
+        lines.append(" | ".join(cols))
+
+    # High/Low summary
+    if idx_tracker:
+        lines.append("")
+        lines.append("📍 **高低点:**")
+        name_map = {"^GSPC": "S&P500", "^IXIC": "纳斯达克", "^DJI": "道琼斯"}
+        for code in ["^GSPC", "^IXIC", "^DJI"]:
+            if code in idx_tracker:
+                tr = idx_tracker[code]
+                lines.append(
+                    f"  {name_map.get(code, code)}: "
+                    f"高点({tr['high_pct']:+.2f}%) @{tr['high_time']} | "
+                    f"低点({tr['low_pct']:+.2f}%) @{tr['low_time']}"
+                )
+
+    return lines
+
+
+# ═══════════════════════════════════════════════════════════════
+# 9. 快讯
 # ═══════════════════════════════════════════════════════════════
 @safe_section("快讯")
 def section_news(data: dict) -> list[str]:
@@ -353,11 +526,10 @@ def section_news(data: dict) -> list[str]:
     if not news_list:
         return lines + ["  暂无快讯"]
 
-    for item in news_list[:6]:
+    for item in news_list[:8]:
         title = item.get("title", "")[:80]
         t = item.get("time", "")
         src = item.get("source_name") or item.get("source", "")
-        # Extract HH:MM
         if t and len(t) >= 5:
             if len(t) >= 16 and "T" in t:
                 t = t[11:16]
@@ -371,9 +543,8 @@ def section_news(data: dict) -> list[str]:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 9. 🧠 Wendy分析（规则引擎，纯确定性，ZERO AI）
+# 10. 🧠 Wendy分析（规则引擎，纯确定性）
 # ═══════════════════════════════════════════════════════════════
-@safe_section("Wendy分析")
 def section_analysis(
     index_data: dict,
     sector_data: dict,
@@ -382,7 +553,22 @@ def section_analysis(
     commodity_data: dict,
     bond_data: dict,
     forex_data: dict,
-) -> list[str]:
+) -> tuple[list[str], dict]:
+    """Returns (lines, signal_data) for use in summary."""
+    try:
+        return _section_analysis_inner(
+            index_data, sector_data, mag7_data,
+            adr_data, commodity_data, bond_data, forex_data,
+        )
+    except Exception as e:
+        return [f"⚠️ [Wendy分析] 获取失败: {e}"], {}
+
+
+def _section_analysis_inner(
+    index_data, sector_data, mag7_data,
+    adr_data, commodity_data, bond_data, forex_data,
+) -> tuple[list[str], dict]:
+
     lines = ["🧠 **Wendy分析**"]
 
     # ── Extract key metrics ──
@@ -401,11 +587,49 @@ def section_analysis(
     vix_level = vix_q.get("price", 0)
     vix_pct = vix_q.get("change_pct", 0)
 
-    # ── 9a. 市场定性 ──
+    mag_quotes = mag7_data.get("quotes", [])
+    mag_avg = sum(q["change_pct"] for q in mag_quotes) / len(mag_quotes) if mag_quotes else 0
+
+    adr_quotes = adr_data.get("quotes", [])
+    adr_avg = sum(q["change_pct"] for q in adr_quotes) / len(adr_quotes) if adr_quotes else 0
+
+    commodities = commodity_data.get("commodities", [])
+    commodity_map = {c["symbol"]: c for c in commodities}
+    gold = commodity_map.get("GC=F", {})
+    gold_pct = gold.get("change_pct", 0)
+    oil = commodity_map.get("CL=F", {})
+    oil_pct = oil.get("change_pct", 0)
+    copper = commodity_map.get("HG=F", {})
+    copper_pct = copper.get("change_pct", 0)
+
+    bonds = bond_data.get("bonds", [])
+    bond_map = {b["symbol"]: b for b in bonds}
+    tnx = bond_map.get("^TNX", {})
+    y10 = tnx.get("price", 0)
+    y10_pct = tnx.get("change_pct", 0)
+
+    forex = forex_data.get("forex", [])
+    fx_map = {f["symbol"]: f for f in forex}
+    dxy = fx_map.get("DX-Y.NYB", {})
+    dxy_price = dxy.get("price", 0)
+    dxy_pct = dxy.get("change_pct", 0)
+
+    sectors = sector_data.get("sectors", [])
+    etf_sectors = []
+    for s in sectors:
+        if s.get("etf"):
+            etf_sectors.append({
+                "name_cn": s["name_cn"],
+                "symbol": s["etf"]["symbol"],
+                "pct": s["etf"]["change_pct"],
+            })
+    etf_sectors.sort(key=lambda x: x["pct"], reverse=True)
+
+    # ═══ 10a. 市场定性 ═══
     lines.append("")
     lines.append("**市场定性:**")
 
-    # Risk gauge based on VIX
+    # VIX signal
     if vix_level >= 30:
         vix_signal = "🔴 极度恐慌（VIX≥30）— 市场剧烈波动"
     elif vix_level >= 25:
@@ -420,62 +644,71 @@ def section_analysis(
         vix_signal = "⚪ VIX数据暂无"
     lines.append(f"  VIX: {vix_signal}")
 
-    # Dow vs Nasdaq divergence (value vs growth)
+    # Value vs Growth
     scissor = dow_pct - nas_pct
     if scissor > 1.0:
-        style_signal = "⚠️ 价值 > 成长（道指强、纳指弱）→ Risk OFF，防御模式"
+        style_signal = "⚠️ 价值>成长（道指强、纳指弱）→ Risk OFF"
     elif scissor < -1.0:
-        style_signal = "🚀 成长 > 价值（纳指强、道指弱）→ Risk ON，追逐增长"
+        style_signal = "🚀 成长>价值（纳指强、道指弱）→ Risk ON"
     elif sp_pct > 0.5 and nas_pct > 0.5:
-        style_signal = "🟢 普涨行情（标普+纳指同涨）"
+        style_signal = "🟢 普涨行情"
     elif sp_pct < -0.5 and nas_pct < -0.5:
-        style_signal = "🔴 普跌行情（标普+纳指同跌）"
+        style_signal = "🔴 普跌行情"
     else:
         style_signal = "⚖️ 中性震荡"
     lines.append(f"  风格: {style_signal}")
-    lines.append(f"  道指 {dow_pct:+.2f}% vs 纳指 {nas_pct:+.2f}% → 剪刀差 {scissor:+.2f}%")
+    lines.append(f"  道指{dow_pct:+.2f}% vs 纳指{nas_pct:+.2f}% → 剪刀差{scissor:+.2f}%")
 
-    # ── 9b. Mag7 健康度 ──
+    # ═══ 10b. 资金轮动 ═══
+    lines.append("")
+    lines.append("**资金轮动:**")
+    if etf_sectors:
+        top3 = etf_sectors[:3]
+        bot3 = etf_sectors[-3:]
+        in_names = " / ".join([f"{s['name_cn']}({s['pct']:+.2f}%)" for s in top3])
+        out_names = " / ".join([f"{s['name_cn']}({s['pct']:+.2f}%)" for s in bot3])
+        lines.append(f"  🔺 资金涌入: {in_names}")
+        lines.append(f"  🔻 资金撤离: {out_names}")
+
+        # Sector breadth
+        up_ratio = sum(1 for s in etf_sectors if s["pct"] > 0) / len(etf_sectors) if etf_sectors else 0
+        lines.append(f"  板块上涨比: {up_ratio:.0%}（{sum(1 for s in etf_sectors if s['pct'] > 0)}/{len(etf_sectors)}）")
+    else:
+        lines.append("  数据暂无")
+
+    # ═══ 10c. Mag7健康度 ═══
     lines.append("")
     lines.append("**Mag7 健康度:**")
-    mag_quotes = mag7_data.get("quotes", [])
     if mag_quotes:
         mag_up = sum(1 for q in mag_quotes if q["change_pct"] > 0)
         mag_down = len(mag_quotes) - mag_up
-        mag_avg = sum(q["change_pct"] for q in mag_quotes) / len(mag_quotes)
         best = max(mag_quotes, key=lambda q: q["change_pct"])
         worst = min(mag_quotes, key=lambda q: q["change_pct"])
+        spread = best["change_pct"] - worst["change_pct"]
 
-        lines.append(f"  {mag_up}涨/{mag_down}跌 | 均涨幅 {mag_avg:+.2f}%")
+        lines.append(f"  {mag_up}涨/{mag_down}跌 | 均涨幅{mag_avg:+.2f}%")
         lines.append(
             f"  最强: {best.get('cn_name', best['symbol'])} {best['change_pct']:+.2f}% | "
             f"最弱: {worst.get('cn_name', worst['symbol'])} {worst['change_pct']:+.2f}%"
         )
-
-        # Mag7 divergence: if spread > 5%, something is happening
-        spread = best["change_pct"] - worst["change_pct"]
         if spread > 5:
-            lines.append(f"  ⚠️ 内部分化严重（差距{spread:.1f}%），关注财报/事件驱动")
+            lines.append(f"  ⚠️ 内部分化严重（差距{spread:.1f}%），事件驱动")
         elif mag_avg > 1:
-            lines.append(f"  🟢 科技巨头整体强势，市场风险偏好高")
+            lines.append(f"  🟢 科技巨头整体强势，风险偏好高")
         elif mag_avg < -1:
             lines.append(f"  🔴 科技巨头整体疲弱，大盘承压")
     else:
         lines.append("  数据暂无")
 
-    # ── 9c. 中概 vs 大盘 ──
+    # ═══ 10d. 中概 vs 大盘 ═══
     lines.append("")
     lines.append("**中概 vs 大盘:**")
-    adr_quotes = adr_data.get("quotes", [])
-    if adr_quotes and sp_pct != 0:
-        adr_avg = sum(q["change_pct"] for q in adr_quotes) / len(adr_quotes)
+    if adr_quotes:
         adr_up = sum(1 for q in adr_quotes if q["change_pct"] > 0)
         adr_down = len(adr_quotes) - adr_up
         relative = adr_avg - sp_pct
-
         lines.append(f"  中概均涨幅: {adr_avg:+.2f}% vs S&P500: {sp_pct:+.2f}%")
         lines.append(f"  相对强弱: {relative:+.2f}% ({adr_up}涨/{adr_down}跌)")
-
         if relative > 2:
             lines.append(f"  🟢 中概显著跑赢大盘，中国资产受追捧")
         elif relative < -2:
@@ -489,153 +722,147 @@ def section_analysis(
     else:
         lines.append("  数据暂无")
 
-    # ── 9d. 板块轮动信号 ──
+    # ═══ 10e. 🛡️ 避险信号组合（类似A股护盘指标） ═══
     lines.append("")
-    lines.append("**板块轮动:**")
-    sectors = sector_data.get("sectors", [])
-    etf_sectors = []
-    for s in sectors:
-        if s.get("etf"):
-            etf_sectors.append({
-                "name_cn": s["name_cn"],
-                "symbol": s["etf"]["symbol"],
-                "pct": s["etf"]["change_pct"],
-            })
+    lines.append("**🛡️ 避险信号组合:**")
+    safe_haven_signals = 0
+    safe_haven_total = 0
 
+    # Signal 1: VIX spike
+    if vix_level >= 20:
+        safe_haven_signals += 1
+        lines.append(f"  🔴 VIX={vix_level:.2f}({vix_pct:+.2f}%) → 恐慌升温")
+    elif vix_level >= 15:
+        lines.append(f"  🟡 VIX={vix_level:.2f}({vix_pct:+.2f}%) → 正常偏高")
+    else:
+        lines.append(f"  🟢 VIX={vix_level:.2f}({vix_pct:+.2f}%) → 市场平静")
+
+    # Signal 2: Gold rally
+    if gold_pct > 1.5:
+        safe_haven_signals += 1
+        lines.append(f"  🔴 黄金{gold_pct:+.2f}% → 避险需求强劲")
+    elif gold_pct < -1:
+        lines.append(f"  🟢 黄金{gold_pct:+.2f}% → 无避险需求")
+    else:
+        lines.append(f"  ⚖️ 黄金{gold_pct:+.2f}% → 中性")
+
+    # Signal 3: Bond yield drop (flight to safety)
+    if y10_pct < -2:
+        safe_haven_signals += 1
+        lines.append(f"  🔴 10Y美债收益率{y10_pct:+.2f}%大跌 → 资金涌入国债避险")
+    elif y10_pct > 2:
+        lines.append(f"  🟡 10Y美债收益率{y10_pct:+.2f}%大涨 → 通胀/紧缩预期")
+    else:
+        lines.append(f"  ⚖️ 10Y美债收益率{y10_pct:+.2f}% → 中性")
+
+    # Signal 4: Defensive sectors outperforming
+    defensive_names = {"公用事业", "必需消费", "医疗健康", "房地产"}
+    offensive_names = {"半导体", "可选消费", "通信服务"}
+    def_pcts = [s["pct"] for s in etf_sectors if s["name_cn"] in defensive_names]
+    off_pcts = [s["pct"] for s in etf_sectors if s["name_cn"] in offensive_names]
+    if def_pcts and off_pcts:
+        def_avg = sum(def_pcts) / len(def_pcts)
+        off_avg = sum(off_pcts) / len(off_pcts)
+        if def_avg > off_avg + 1:
+            safe_haven_signals += 1
+            lines.append(f"  🔴 防御板块领涨({def_avg:+.2f}% vs 进攻{off_avg:+.2f}%) → 避险轮动")
+        elif off_avg > def_avg + 1:
+            lines.append(f"  🟢 进攻板块领涨({off_avg:+.2f}% vs 防御{def_avg:+.2f}%) → 风险偏好")
+        else:
+            lines.append(f"  ⚖️ 攻防均衡（进攻{off_avg:+.2f}% / 防御{def_avg:+.2f}%）")
+
+    # Combined verdict
+    if safe_haven_signals >= 3:
+        lines.append(f"  🚨 {safe_haven_signals}/4避险信号亮灯 → **全面避险模式**，科技/成长承压严重")
+    elif safe_haven_signals >= 2:
+        lines.append(f"  ⚠️ {safe_haven_signals}/4避险信号 → 避险情绪偏浓，谨慎操作")
+    elif safe_haven_signals >= 1:
+        lines.append(f"  🟡 {safe_haven_signals}/4避险信号 → 轻微避险，但不构成系统风险")
+    else:
+        lines.append(f"  🟢 0/4避险信号 → 市场情绪正常，无需过度防御")
+
+    # ═══ 10f. 📏 趋势强度标尺 ═══
+    lines.append("")
+    lines.append("**📏 趋势强度:**")
     if etf_sectors:
-        etf_sectors.sort(key=lambda x: x["pct"], reverse=True)
         best_sector = etf_sectors[0]
         worst_sector = etf_sectors[-1]
         sector_spread = best_sector["pct"] - worst_sector["pct"]
 
         lines.append(
-            f"  最强: {best_sector['name_cn']}({best_sector['symbol']}) {best_sector['pct']:+.2f}%"
+            f"  #1 {best_sector['name_cn']}({best_sector['symbol']}): {best_sector['pct']:+.2f}%"
         )
-        lines.append(
-            f"  最弱: {worst_sector['name_cn']}({worst_sector['symbol']}) {worst_sector['pct']:+.2f}%"
-        )
-        lines.append(f"  板块离散度: {sector_spread:.2f}%")
 
-        if sector_spread > 3:
-            lines.append(f"  ⚠️ 板块分化严重，资金选择性进攻")
-        elif sector_spread < 1:
-            lines.append(f"  📊 板块齐涨齐跌，系统性行情")
+        if sector_spread > 5:
+            trend_strength = "🔥 强分化"
+            trend_desc = "资金方向明确，做多有方向感"
+        elif sector_spread > 3:
+            trend_strength = "📊 中等分化"
+            trend_desc = "有选择性进攻，但力度一般"
+        elif sector_spread > 1:
+            trend_strength = "⚖️ 弱分化"
+            trend_desc = "板块齐涨齐跌，缺乏主线"
+        else:
+            trend_strength = "😶 无方向"
+            trend_desc = "极度窄幅，观望为主"
 
-        # Defensive vs offensive check
-        defensive_names = {"公用事业", "消费必需品", "医疗保健", "房地产"}
-        offensive_names = {"科技", "半导体", "可选消费", "通信服务", "AI概念"}
-        def_pcts = [s["pct"] for s in etf_sectors if s["name_cn"] in defensive_names]
-        off_pcts = [s["pct"] for s in etf_sectors if s["name_cn"] in offensive_names]
+        lines.append(f"  板块离散度: {sector_spread:.2f}% → {trend_strength}（{trend_desc}）")
 
-        if def_pcts and off_pcts:
-            def_avg = sum(def_pcts) / len(def_pcts)
-            off_avg = sum(off_pcts) / len(off_pcts)
-            if def_avg > off_avg + 1:
-                lines.append(f"  🛡️ 防御板块领涨（{def_avg:+.2f}% vs 进攻{off_avg:+.2f}%）→ 避险情绪")
-            elif off_avg > def_avg + 1:
-                lines.append(f"  ⚔️ 进攻板块领涨（{off_avg:+.2f}% vs 防御{def_avg:+.2f}%）→ 风险偏好高")
+        # Check if tech-heavy
+        tech_sectors = {"半导体", "通信服务", "可选消费"}
+        tech_in_top3 = sum(1 for s in etf_sectors[:3] if s["name_cn"] in tech_sectors)
+        if tech_in_top3 >= 2:
+            lines.append(f"  🚀 TOP3中{tech_in_top3}个科技/成长板块 → 科技主线日")
+        value_sectors = {"金融", "能源", "材料", "工业"}
+        value_in_top3 = sum(1 for s in etf_sectors[:3] if s["name_cn"] in value_sectors)
+        if value_in_top3 >= 2:
+            lines.append(f"  🏛️ TOP3中{value_in_top3}个价值/周期板块 → 价值轮动日")
     else:
         lines.append("  数据暂无")
 
-    # ── 9e. 商品信号 ──
+    # ═══ 10g. 商品/利率/汇率联动信号 ═══
     lines.append("")
-    lines.append("**商品信号:**")
-    commodities = commodity_data.get("commodities", [])
-    commodity_map = {c["symbol"]: c for c in commodities}
+    lines.append("**关键联动信号:**")
 
-    gold = commodity_map.get("GC=F")
-    silver = commodity_map.get("SI=F")
-    oil_wti = commodity_map.get("CL=F")
-    copper = commodity_map.get("HG=F")
+    signals_list = []
 
-    signals = []
-    if gold:
-        gold_pct = gold.get("change_pct", 0)
-        if gold_pct > 1.5:
-            signals.append(f"🥇 黄金大涨{gold_pct:+.2f}% → 避险需求强劲")
-        elif gold_pct < -1.5:
-            signals.append(f"🥇 黄金大跌{gold_pct:+.2f}% → 风险偏好回升/美元走强")
-        else:
-            signals.append(f"🥇 黄金{gold_pct:+.2f}%（中性）")
+    # Gold + VIX combo
+    if gold_pct > 1.5 and vix_level >= 20:
+        signals_list.append("🚨 黄金+VIX同涨 → 市场恐慌模式")
+    elif gold_pct > 1.5 and vix_level < 15:
+        signals_list.append("🤔 黄金涨但VIX低 → 可能是通胀交易而非避险")
 
-    if oil_wti:
-        oil_pct = oil_wti.get("change_pct", 0)
-        if oil_pct > 3:
-            signals.append(f"🛢️ 原油大涨{oil_pct:+.2f}% → 通胀压力/供给收紧")
-        elif oil_pct < -3:
-            signals.append(f"🛢️ 原油大跌{oil_pct:+.2f}% → 需求担忧/衰退预期")
-        else:
-            signals.append(f"🛢️ 原油{oil_pct:+.2f}%（中性）")
+    # Oil + copper combo (economic signal)
+    if oil_pct < -3 and copper_pct < -2:
+        signals_list.append("⚠️ 原油+铜同跌 → 全球经济衰退预期")
+    elif oil_pct > 3 and copper_pct > 2:
+        signals_list.append("🟢 原油+铜同涨 → 全球经济复苏预期")
 
-    if copper:
-        copper_pct = copper.get("change_pct", 0)
-        if copper_pct > 2:
-            signals.append(f"🔶 铜大涨{copper_pct:+.2f}% → 经济复苏预期")
-        elif copper_pct < -2:
-            signals.append(f"🔶 铜大跌{copper_pct:+.2f}% → 经济放缓信号")
+    # Yield + dollar combo
+    if y10_pct > 2 and dxy_pct > 0.3:
+        signals_list.append("⚠️ 利率上行+美元走强 → 金融条件收紧")
+    elif y10_pct < -2 and dxy_pct < -0.3:
+        signals_list.append("🟢 利率下行+美元走弱 → 金融条件宽松")
 
-    # Gold/Silver ratio (inverse correlation with risk)
-    if gold and silver and silver["price"] > 0:
-        gs_ratio = gold["price"] / silver["price"]
-        if gs_ratio > 80:
-            signals.append(f"📊 金银比{gs_ratio:.1f} → 偏高，避险氛围")
-        elif gs_ratio < 60:
-            signals.append(f"📊 金银比{gs_ratio:.1f} → 偏低，工业需求旺盛")
+    # Mag7 vs market
+    if mag_avg < -2 and sp_pct > -0.5:
+        signals_list.append("⚠️ 巨头大跌但大盘稳 → 权重轮动，非系统风险")
+    elif mag_avg > 2 and sp_pct < 0.5:
+        signals_list.append("🤔 巨头大涨但大盘弱 → 资金集中头部，中小盘承压")
 
-    if signals:
-        for s in signals:
+    # ADR vs A-share anticipation
+    if adr_avg > 2:
+        signals_list.append("🟢 中概股大涨 → 明日A股相关标的有望受益")
+    elif adr_avg < -3:
+        signals_list.append("🔴 中概股大跌 → 明日A股情绪可能受拖累")
+
+    if signals_list:
+        for s in signals_list:
             lines.append(f"  {s}")
     else:
-        lines.append("  数据暂无")
+        lines.append("  ⚖️ 各资产类别联动正常，无异常信号")
 
-    # ── 9f. 债券/美元信号 ──
-    lines.append("")
-    lines.append("**利率/汇率信号:**")
-    bonds = bond_data.get("bonds", [])
-    bond_map = {b["symbol"]: b for b in bonds}
-    forex = forex_data.get("forex", [])
-    fx_map = {f["symbol"]: f for f in forex}
-
-    tnx = bond_map.get("^TNX")  # 10Y
-    dxy = fx_map.get("DX-Y.NYB")  # Dollar Index
-
-    rate_signals = []
-    if tnx:
-        y10 = tnx["price"]
-        y10_pct = tnx.get("change_pct", 0)
-        if y10 > 5.0:
-            rate_signals.append(f"🔴 10Y美债 {y10:.3f}%（>5%，紧缩环境，股市承压）")
-        elif y10 > 4.5:
-            rate_signals.append(f"🟡 10Y美债 {y10:.3f}%（偏高，关注通胀数据）")
-        elif y10 < 3.5:
-            rate_signals.append(f"🟢 10Y美债 {y10:.3f}%（偏低，宽松预期）")
-        else:
-            rate_signals.append(f"⚖️ 10Y美债 {y10:.3f}%（中性区间）")
-
-    if dxy:
-        dxy_price = dxy["price"]
-        dxy_pct = dxy.get("change_pct", 0)
-        if dxy_price > 105:
-            rate_signals.append(f"💪 美元指数 {dxy_price:.2f}（强势，新兴市场/商品承压）")
-        elif dxy_price < 95:
-            rate_signals.append(f"📉 美元指数 {dxy_price:.2f}（弱势，利好新兴市场/商品）")
-        else:
-            rate_signals.append(f"⚖️ 美元指数 {dxy_price:.2f}（中性）")
-
-    # Combined: rising yields + strong dollar = tightening
-    if tnx and dxy:
-        if tnx.get("change_pct", 0) > 1 and dxy.get("change_pct", 0) > 0.3:
-            rate_signals.append("⚠️ 利率上行+美元走强 → 金融条件收紧，风险资产承压")
-        elif tnx.get("change_pct", 0) < -1 and dxy.get("change_pct", 0) < -0.3:
-            rate_signals.append("🟢 利率下行+美元走弱 → 金融条件宽松，利好风险资产")
-
-    if rate_signals:
-        for s in rate_signals:
-            lines.append(f"  {s}")
-    else:
-        lines.append("  数据暂无")
-
-    # ── 9g. 综合信号评分 & 操作建议 ──
+    # ═══ 10h. 综合评分 & 操作建议 ═══
     lines.append("")
     lines.append("**📏 综合评分:**")
 
@@ -643,78 +870,266 @@ def section_analysis(
     bearish = 0
 
     # Index direction
-    if sp_pct > 0.3:
-        bullish += 1
-    elif sp_pct < -0.3:
-        bearish += 1
-    if nas_pct > 0.3:
-        bullish += 1
-    elif nas_pct < -0.3:
-        bearish += 1
+    if sp_pct > 0.3: bullish += 1
+    elif sp_pct < -0.3: bearish += 1
+    if nas_pct > 0.3: bullish += 1
+    elif nas_pct < -0.3: bearish += 1
 
     # VIX
-    if vix_level < 15:
-        bullish += 1
-    elif vix_level >= 25:
-        bearish += 2
-    elif vix_level >= 20:
-        bearish += 1
+    if vix_level < 15: bullish += 1
+    elif vix_level >= 25: bearish += 2
+    elif vix_level >= 20: bearish += 1
 
     # Mag7
-    if mag_quotes:
-        mag_avg = sum(q["change_pct"] for q in mag_quotes) / len(mag_quotes)
-        if mag_avg > 0.5:
-            bullish += 1
-        elif mag_avg < -0.5:
-            bearish += 1
+    if mag_avg > 0.5: bullish += 1
+    elif mag_avg < -0.5: bearish += 1
 
     # Gold (inverse)
-    if gold and gold.get("change_pct", 0) > 2:
-        bearish += 1  # Gold rally = risk-off
-    elif gold and gold.get("change_pct", 0) < -1:
-        bullish += 1  # Gold sell = risk-on
+    if gold_pct > 2: bearish += 1
+    elif gold_pct < -1: bullish += 1
 
     # Bond yield direction
-    if tnx and tnx.get("change_pct", 0) > 2:
-        bearish += 1  # Rising yields fast = bad for stocks
-    elif tnx and tnx.get("change_pct", 0) < -2:
-        bullish += 1  # Falling yields = good for stocks
+    if y10_pct > 2: bearish += 1
+    elif y10_pct < -2: bullish += 1
 
     # Sector breadth
     if etf_sectors:
         up_ratio = sum(1 for s in etf_sectors if s["pct"] > 0) / len(etf_sectors)
-        if up_ratio > 0.7:
-            bullish += 1
-        elif up_ratio < 0.3:
-            bearish += 1
+        if up_ratio > 0.7: bullish += 1
+        elif up_ratio < 0.3: bearish += 1
+
+    # Safe haven count
+    if safe_haven_signals >= 3: bearish += 2
+    elif safe_haven_signals >= 2: bearish += 1
+
+    # Scissor
+    if scissor > 1.5: bearish += 1  # Extreme value > growth = risk-off
+    elif scissor < -1.5: bullish += 1  # Extreme growth = risk-on
 
     total_score = bullish - bearish
-    if total_score >= 3:
-        outlook = "✅ 多头主导 — 市场风险偏好高，可积极参与"
-    elif total_score >= 1:
-        outlook = "🟢 偏多 — 温和看涨，关注主线板块"
-    elif total_score <= -3:
-        outlook = "🛑 空头主导 — 避险为主，减仓观望"
-    elif total_score <= -1:
-        outlook = "🟡 偏空 — 谨慎操作，控制仓位"
+    if total_score >= 4:
+        advice = "✅ 多头主导 — 市场风险偏好高，积极参与"
+    elif total_score >= 2:
+        advice = "🟢 偏多 — 温和看涨，关注主线板块"
+    elif total_score <= -4:
+        advice = "🛑 空头主导 — 避险为主，减仓观望"
+    elif total_score <= -2:
+        advice = "🟡 偏空 — 谨慎操作，控制仓位"
+    elif abs(scissor) > 1.5:
+        advice = "⚠️ 风格极端分化 — 跟随强势风格，回避弱势"
     else:
-        outlook = "⚖️ 中性震荡 — 轻仓灵活应对"
+        advice = "⚖️ 中性震荡 — 轻仓灵活应对"
 
     lines.append(f"  多头信号: {bullish} | 空头信号: {bearish} | 净值: {total_score:+d}")
-    lines.append(f"  {outlook}")
+    lines.append(f"  {advice}")
+
+    # Collect signal data for summary
+    signal_data = {
+        "sp_pct": sp_pct,
+        "nas_pct": nas_pct,
+        "dow_pct": dow_pct,
+        "scissor": scissor,
+        "style_signal": style_signal,
+        "vix_level": vix_level,
+        "vix_pct": vix_pct,
+        "mag_avg": mag_avg,
+        "mag_quotes": mag_quotes,
+        "adr_avg": adr_avg,
+        "adr_quotes": adr_quotes,
+        "gold_pct": gold_pct,
+        "oil_pct": oil_pct,
+        "copper_pct": copper_pct,
+        "y10": y10,
+        "y10_pct": y10_pct,
+        "dxy_price": dxy_price,
+        "dxy_pct": dxy_pct,
+        "safe_haven_signals": safe_haven_signals,
+        "etf_sectors": etf_sectors,
+        "bullish": bullish,
+        "bearish": bearish,
+        "total_score": total_score,
+        "advice": advice,
+    }
+
+    return lines, signal_data
+
+
+# ═══════════════════════════════════════════════════════════════
+# 11. 📝 盘后总结（模板化叙事，类似A股版）
+# ═══════════════════════════════════════════════════════════════
+@safe_section("盘后总结")
+def section_summary(signal_data: dict) -> list[str]:
+    if not signal_data:
+        return []
+
+    sp_pct = signal_data.get("sp_pct", 0)
+    nas_pct = signal_data.get("nas_pct", 0)
+    dow_pct = signal_data.get("dow_pct", 0)
+    scissor = signal_data.get("scissor", 0)
+    vix_level = signal_data.get("vix_level", 0)
+    mag_avg = signal_data.get("mag_avg", 0)
+    mag_quotes = signal_data.get("mag_quotes", [])
+    adr_avg = signal_data.get("adr_avg", 0)
+    gold_pct = signal_data.get("gold_pct", 0)
+    y10 = signal_data.get("y10", 0)
+    y10_pct = signal_data.get("y10_pct", 0)
+    safe_haven = signal_data.get("safe_haven_signals", 0)
+    etf_sectors = signal_data.get("etf_sectors", [])
+    bullish = signal_data.get("bullish", 0)
+    bearish = signal_data.get("bearish", 0)
+
+    lines = ["═══ 📝 总结 ═══", ""]
+
+    # ── Determine day type ──
+    if safe_haven >= 3 and nas_pct < -1:
+        day_type = "extreme_risk_off"
+    elif safe_haven >= 2:
+        day_type = "risk_off"
+    elif bullish >= 5:
+        day_type = "strong_bull"
+    elif bearish >= 5:
+        day_type = "strong_bear"
+    elif scissor > 1.5:
+        day_type = "value_rotation"
+    elif scissor < -1.5:
+        day_type = "growth_chase"
+    elif sp_pct > 0.5 and nas_pct > 0.5:
+        day_type = "broad_rally"
+    elif sp_pct < -0.5 and nas_pct < -0.5:
+        day_type = "broad_selloff"
+    else:
+        day_type = "mixed"
+
+    # ── Headline ──
+    sp_dir = "涨" if sp_pct >= 0 else "跌"
+    nas_dir = "涨" if nas_pct >= 0 else "跌"
+
+    if day_type == "extreme_risk_off":
+        lines.append(
+            f"今天三大避险信号齐亮，纳指{nas_dir}{abs(nas_pct):.2f}%：**全面避险日**。"
+        )
+    elif day_type == "risk_off":
+        lines.append(
+            f"S&P {sp_dir}{abs(sp_pct):.2f}%，纳指{nas_dir}{abs(nas_pct):.2f}%。"
+            f"资金偏防御，避险情绪升温。"
+        )
+    elif day_type == "strong_bull":
+        lines.append(f"多头全面发力，S&P {sp_dir}{abs(sp_pct):.2f}%，市场情绪极度乐观。")
+    elif day_type == "strong_bear":
+        lines.append(f"空头占据绝对优势，S&P {sp_dir}{abs(sp_pct):.2f}%，全面承压。")
+    elif day_type == "value_rotation":
+        lines.append(
+            f"典型的价值轮动日：道指+{abs(dow_pct):.2f}%跑赢纳指{nas_pct:+.2f}%，"
+            f"剪刀差{scissor:+.2f}%。资金从成长切换到价值。"
+        )
+    elif day_type == "growth_chase":
+        lines.append(
+            f"成长股强势日：纳指{nas_dir}{abs(nas_pct):.2f}%领涨，"
+            f"科技主线明确。"
+        )
+    elif day_type == "broad_rally":
+        lines.append(f"三大指数全面上涨，S&P {sp_pct:+.2f}%，普涨格局。")
+    elif day_type == "broad_selloff":
+        lines.append(f"三大指数全面下跌，S&P {sp_pct:+.2f}%，普跌格局。")
+    else:
+        lines.append(
+            f"S&P {sp_dir}{abs(sp_pct):.2f}%，纳指{nas_dir}{abs(nas_pct):.2f}%，"
+            f"方向不明朗。"
+        )
+
+    lines.append("")
+
+    # ── Three signals (like A-share) ──
+    # 1. 避险信号
+    if safe_haven >= 3:
+        lines.append(f"1. 避险信号{safe_haven}/4灯全亮 → 市场极度恐慌")
+    elif safe_haven >= 2:
+        lines.append(f"1. 避险信号{safe_haven}/4灯 → 避险情绪偏浓")
+    elif safe_haven == 1:
+        lines.append(f"1. 避险信号1/4灯 → 轻微担忧但可控")
+    else:
+        lines.append(f"1. 避险信号0/4灯 → 市场情绪正常")
+
+    # 2. Mag7 health (like A-share trend strength)
+    best_mag = max(mag_quotes, key=lambda q: q["change_pct"]) if mag_quotes else {}
+    worst_mag = min(mag_quotes, key=lambda q: q["change_pct"]) if mag_quotes else {}
+    if mag_avg > 1:
+        lines.append(f"2. Mag7均涨{mag_avg:+.2f}% → 科技牛市基调，可跟")
+    elif mag_avg < -1:
+        lines.append(
+            f"2. Mag7均跌{mag_avg:+.2f}% → 巨头承压"
+            + (f"（{worst_mag.get('cn_name', '')} {worst_mag.get('change_pct', 0):+.2f}%领跌）" if worst_mag else "")
+        )
+    else:
+        lines.append(f"2. Mag7均涨幅{mag_avg:+.2f}% → 巨头表现中性")
+
+    # 3. Style signal
+    if scissor > 1.5:
+        lines.append(f"3. 道/纳剪刀差{scissor:+.2f}% → 极端价值偏好，成长股资金外流")
+    elif scissor < -1.5:
+        lines.append(f"3. 道/纳剪刀差{scissor:+.2f}% → 极端成长偏好，科技主导")
+    elif scissor > 0.5:
+        lines.append(f"3. 道/纳剪刀差{scissor:+.2f}% → 偏价值风格")
+    elif scissor < -0.5:
+        lines.append(f"3. 道/纳剪刀差{scissor:+.2f}% → 偏成长风格")
+    else:
+        lines.append(f"3. 道/纳剪刀差{scissor:+.2f}% → 风格中性")
+
+    lines.append("")
+
+    # ── Notable moves ──
+    if etf_sectors:
+        best_s = etf_sectors[0]
+        worst_s = etf_sectors[-1]
+        spread = best_s["pct"] - worst_s["pct"]
+        if spread > 3:
+            lines.append(
+                f"板块分化明显：{best_s['name_cn']}{best_s['pct']:+.2f}%领涨，"
+                f"{worst_s['name_cn']}{worst_s['pct']:+.2f}%领跌，"
+                f"离散度{spread:.2f}%。"
+            )
+
+    # ADR impact on A-share
+    if abs(adr_avg) > 2:
+        adr_dir = "大涨" if adr_avg > 0 else "大跌"
+        impact = "正面提振" if adr_avg > 0 else "负面拖累"
+        lines.append(f"中概股{adr_dir}({adr_avg:+.2f}%)，对明日A股中概相关标的{impact}。")
+
+    lines.append("")
+
+    # ── 明日关注 ──
+    lines.append("**明日关注：**")
+    focus = []
+
+    if safe_haven >= 2:
+        focus.append("避险信号能否缓解、VIX能否回落20以下")
+    if abs(mag_avg) > 2:
+        focus.append(f"Mag7{'反弹' if mag_avg < 0 else '持续性'}，关注是否有财报/事件催化")
+    if abs(scissor) > 1.5:
+        focus.append("道/纳剪刀差能否收窄、风格切换信号")
+    if y10 > 4.5:
+        focus.append(f"10Y美债{y10:.3f}%偏高，关注后续通胀数据影响")
+    if abs(adr_avg) > 3:
+        focus.append("中概股表现对A股开盘影响")
+
+    if not focus:
+        focus.append("继续观察主线方向与资金流向变化")
+
+    for fp in focus:
+        lines.append(f"  • {fp}")
 
     return lines
 
 
 # ═══════════════════════════════════════════════════════════════
-# 10. 经济日历（如有）
+# 12. 经济日历
 # ═══════════════════════════════════════════════════════════════
 @safe_section("经济日历")
 def section_calendar() -> list[str]:
     data = fetch("/api/us-stock/calendar")
     events = data.get("events", data.get("data", []))
     if not events:
-        return []  # Silently skip if no calendar endpoint
+        return []
 
     lines = ["📅 **经济日历**"]
     for e in events[:5]:
@@ -741,9 +1156,9 @@ def format_briefing(show_time: bool = False) -> str:
     weekday_cn = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"][now.weekday()]
 
     output = []
-    output.append(f"{'═' * 40}")
+    output.append(f"{'═' * 50}")
     output.append(f"🇺🇸 **美股简报** ({time_label} {weekday_cn})")
-    output.append(f"{'═' * 40}")
+    output.append(f"{'═' * 50}")
 
     if show_time:
         output.append(f"⏱ 生成时间戳: {now.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -758,10 +1173,10 @@ def format_briefing(show_time: bool = False) -> str:
         "commodity": "/api/us-stock/commodities",
         "bond": "/api/us-stock/bonds",
         "forex": "/api/us-stock/forex",
-        "news": "/api/news/latest?limit=6",
+        "news": "/api/news/latest?limit=8",
     }
     results = {}
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=4) as executor:  # Reduced from 8 to avoid overwhelming API
         futures = {executor.submit(fetch, ep): key for key, ep in endpoints.items()}
         for future in as_completed(futures):
             key = futures[future]
@@ -776,29 +1191,65 @@ def format_briefing(show_time: bool = False) -> str:
     forex_data = results.get("forex", {})
     news_data = results.get("news", {})
 
+    # Save index snapshot
+    index_quotes = index_data.get("quotes", [])
+    if index_quotes:
+        save_index_snapshot(index_quotes)
+
     # ── Assemble sections ──
-    sections = [
-        section_indexes(index_data),
-        section_sectors(sector_data),
-        section_mag7(mag7_data),
-        section_china_adr(adr_data),
-        section_commodities(commodity_data),
-        section_bonds(bond_data),
-        section_forex(forex_data),
-        section_news(news_data),
-        section_analysis(
-            index_data, sector_data, mag7_data,
-            adr_data, commodity_data, bond_data, forex_data,
-        ),
-        section_calendar(),
-    ]
 
-    for section_lines in sections:
-        if section_lines:  # Skip empty sections (e.g., calendar)
-            output.extend(section_lines)
-            output.append("")
+    # 1-7: Data sections
+    output.extend(section_indexes(index_data))
+    output.append("")
+    output.extend(section_sectors(sector_data))
+    output.append("")
+    output.extend(section_mag7(mag7_data))
+    output.append("")
+    output.extend(section_china_adr(adr_data))
+    output.append("")
+    output.extend(section_commodities(commodity_data))
+    output.append("")
+    output.extend(section_bonds(bond_data))
+    output.append("")
+    output.extend(section_forex(forex_data))
+    output.append("")
 
-    output.append(f"{'═' * 40}")
+    # 8: Intraday timeline
+    intraday = section_intraday_table()
+    if intraday:
+        output.extend(intraday)
+        output.append("")
+
+    # 9: News
+    output.extend(section_news(news_data))
+    output.append("")
+
+    # 10: Analysis
+    analysis_result = section_analysis(
+        index_data, sector_data, mag7_data,
+        adr_data, commodity_data, bond_data, forex_data,
+    )
+    signal_data = {}
+    if isinstance(analysis_result, tuple):
+        analysis_lines, signal_data = analysis_result
+        output.extend(analysis_lines)
+    else:
+        output.extend(analysis_result)
+    output.append("")
+
+    # 11: Summary (narrative)
+    summary = section_summary(signal_data)
+    if summary:
+        output.extend(summary)
+        output.append("")
+
+    # 12: Calendar
+    cal = section_calendar()
+    if cal:
+        output.extend(cal)
+        output.append("")
+
+    output.append(f"{'═' * 50}")
     output.append(f"⏱ 生成: {datetime.now().strftime('%H:%M:%S')} | 数据仅供参考")
 
     return "\n".join(output)
