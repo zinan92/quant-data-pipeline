@@ -730,7 +730,15 @@ def main():
     output_lines.append(f"{'═' * 50}")
     output_lines.append(f"⏱ 生成时间: {datetime.now().strftime('%H:%M:%S')} | 数据仅供参考")
 
-    print("\n".join(output_lines))
+    full_text = "\n".join(output_lines)
+    print(full_text)
+
+    # ── Auto-push to Notion ──
+    try:
+        from push_to_notion import push_briefing_to_notion
+        push_briefing_to_notion(full_text)
+    except Exception as e:
+        print(f"\n⚠️ Notion推送失败（不影响主流程）: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":
