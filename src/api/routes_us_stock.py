@@ -110,9 +110,12 @@ async def get_sector_detail(name: str):
     """
     获取单个板块详情 (ETF + 板块内个股)
 
-    可用板块名: mag7, semiconductors, ai_concept, communication, consumer_disc,
-    consumer_staples, healthcare, financials, energy, industrials, materials,
-    real_estate, utilities, ev_newenergy, crypto_fintech, china_adr
+    可用板块名: mag7, semiconductors, ai_application, robotics, defense,
+    lithium_battery, nuclear, utilities, metals_mining, biotech, solar,
+    precious_metals, financials, ai_infra, gaming_media, travel, genomics,
+    consumer_disc, consumer_staples, space, cybersecurity, quantum,
+    communication, healthcare, energy, industrials, materials,
+    real_estate, ev_newenergy, crypto_fintech, china_adr
     """
     service = get_us_stock_service()
     if name not in service.WATCHLISTS:

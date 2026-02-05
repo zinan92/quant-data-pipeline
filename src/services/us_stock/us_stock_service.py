@@ -15,8 +15,10 @@ logger = logging.getLogger(__name__)
 class USStockService:
     """美股服务"""
 
-    # ── 16个板块 + Mag7 监控列表 ──
+    # ── 板块 + Mag7 监控列表 ──
+    # 包含 A股对标板块 + 美股特有板块
     WATCHLISTS = {
+        # ── 核心指数 ──
         'indexes': {
             '^GSPC': 'S&P 500', '^DJI': '道琼斯', '^IXIC': '纳斯达克',
             '^NDX': '纳斯达克100', '^VIX': '恐慌指数',
@@ -25,17 +27,69 @@ class USStockService:
             'AAPL': '苹果', 'MSFT': '微软', 'GOOGL': '谷歌', 'AMZN': '亚马逊',
             'NVDA': '英伟达', 'META': 'Meta', 'TSLA': '特斯拉',
         },
+        # ── A股对标板块 (21个) ──
         'semiconductors': {
             'NVDA': '英伟达', 'AMD': 'AMD', 'AVGO': '博通', 'QCOM': '高通',
             'TSM': '台积电', 'ASML': 'ASML', 'INTC': '英特尔',
         },
-        'ai_concept': {
+        'ai_application': {
             'PLTR': 'Palantir', 'AI': 'C3.ai', 'PATH': 'UiPath',
             'SNOW': 'Snowflake', 'CRM': 'Salesforce', 'NOW': 'ServiceNow',
         },
-        'communication': {
-            'META': 'Meta', 'GOOGL': '谷歌', 'NFLX': '奈飞',
-            'DIS': '迪士尼', 'TMUS': 'T-Mobile',
+        'robotics': {
+            'ISRG': 'Intuitive Surgical', 'ROK': 'Rockwell', 'TER': 'Teradyne',
+            'AVAV': 'AeroVironment', 'IRBT': 'iRobot',
+        },
+        'defense': {
+            'LMT': '洛克希德', 'RTX': '雷神', 'NOC': '诺格', 'GD': '通用动力',
+            'LHX': 'L3Harris',
+        },
+        'lithium_battery': {
+            'ALB': 'Albemarle', 'SQM': 'SQM', 'QS': 'QuantumScape',
+            'ENVX': 'Enovix', 'ALTM': 'Arcadium Lithium',
+        },
+        'nuclear': {
+            'CCJ': 'Cameco', 'NXE': 'NexGen', 'UEC': 'Uranium Energy',
+            'CEG': 'Constellation', 'LEU': 'Centrus',
+        },
+        'utilities': {
+            'NEE': 'NextEra', 'DUK': '杜克能源', 'SO': '南方电力',
+        },
+        'metals_mining': {
+            'FCX': '自由港', 'CLF': 'Cleveland-Cliffs', 'NUE': 'Nucor',
+            'STLD': 'Steel Dynamics', 'RIO': '力拓',
+        },
+        'biotech': {
+            'AMGN': 'Amgen', 'GILD': 'Gilead', 'REGN': 'Regeneron',
+            'MRNA': 'Moderna', 'BNTX': 'BioNTech',
+        },
+        'solar': {
+            'ENPH': 'Enphase', 'FSLR': 'First Solar', 'ARRY': 'Array Tech',
+            'RUN': 'Sunrun', 'NOVA': 'Sunnova',
+        },
+        'precious_metals': {
+            'NEM': '纽蒙特', 'GOLD': 'Barrick', 'AEM': 'Agnico Eagle',
+            'WPM': 'Wheaton', 'FNV': 'Franco-Nevada',
+        },
+        'financials': {
+            'JPM': '摩根大通', 'BAC': '美银', 'GS': '高盛',
+            'MS': '摩根士丹利', 'V': 'Visa',
+        },
+        'ai_infra': {
+            'MSFT': '微软', 'CRM': 'Salesforce', 'NOW': 'ServiceNow',
+            'PLTR': 'Palantir', 'SNOW': 'Snowflake',
+        },
+        'gaming_media': {
+            'TTWO': 'Take-Two', 'EA': 'EA', 'RBLX': 'Roblox',
+            'U': 'Unity', 'NFLX': '奈飞',
+        },
+        'travel': {
+            'BKNG': 'Booking', 'MAR': '万豪', 'HLT': '希尔顿',
+            'DAL': '达美航空', 'UAL': '美联航',
+        },
+        'genomics': {
+            'TWST': 'Twist Bio', 'EXAS': 'Exact Sciences', 'NTRA': 'Natera',
+            'RXRX': 'Recursion', 'CRSP': 'CRISPR',
         },
         'consumer_disc': {
             'AMZN': '亚马逊', 'TSLA': '特斯拉', 'HD': '家得宝',
@@ -45,13 +99,26 @@ class USStockService:
             'PG': '宝洁', 'KO': '可口可乐', 'WMT': '沃尔玛',
             'COST': 'Costco', 'PEP': '百事',
         },
+        'space': {
+            'RKLB': 'Rocket Lab', 'LHX': 'L3Harris', 'IRDM': 'Iridium',
+            'LUNR': 'Intuitive Machines', 'SPCE': 'Virgin Galactic',
+        },
+        'cybersecurity': {
+            'CRWD': 'CrowdStrike', 'PANW': 'Palo Alto', 'FTNT': 'Fortinet',
+            'ZS': 'Zscaler', 'S': 'SentinelOne',
+        },
+        'quantum': {
+            'IONQ': 'IonQ', 'RGTI': 'Rigetti', 'QBTS': 'D-Wave',
+            'IBM': 'IBM', 'HON': 'Honeywell',
+        },
+        # ── 美股特有板块 ──
+        'communication': {
+            'META': 'Meta', 'GOOGL': '谷歌', 'NFLX': '奈飞',
+            'DIS': '迪士尼', 'TMUS': 'T-Mobile',
+        },
         'healthcare': {
             'UNH': '联合健康', 'LLY': '礼来', 'JNJ': '强生',
             'ABBV': '艾伯维', 'PFE': '辉瑞',
-        },
-        'financials': {
-            'JPM': '摩根大通', 'BAC': '美银', 'GS': '高盛',
-            'MS': '摩根士丹利', 'V': 'Visa',
         },
         'energy': {
             'XOM': '埃克森美孚', 'CVX': '雪佛龙', 'COP': '康菲石油',
@@ -66,9 +133,6 @@ class USStockService:
         },
         'real_estate': {
             'AMT': '美国电塔', 'PLD': '普洛斯', 'CCI': '冠城国际',
-        },
-        'utilities': {
-            'NEE': 'NextEra', 'DUK': '杜克能源', 'SO': '南方电力',
         },
         'ev_newenergy': {
             'TSLA': '特斯拉', 'NIO': '蔚来', 'XPEV': '小鹏',
@@ -85,19 +149,48 @@ class USStockService:
 
     # ── 板块 ETF 映射 ──
     SECTOR_ETFS = {
-        'technology': 'XLK', 'communication': 'XLC', 'consumer_disc': 'XLY',
-        'consumer_staples': 'XLP', 'healthcare': 'XLV', 'financials': 'XLF',
+        # A股对标板块 (21个)
+        'semiconductors': 'SMH', 'ai_application': 'AIQ', 'robotics': 'BOTZ',
+        'defense': 'ITA', 'lithium_battery': 'LIT', 'nuclear': 'URA',
+        'utilities': 'XLU', 'metals_mining': 'XME', 'biotech': 'XBI',
+        'solar': 'TAN', 'precious_metals': 'GLD', 'financials': 'XLF',
+        'ai_infra': 'IGV', 'gaming_media': 'HERO', 'travel': 'JETS',
+        'genomics': 'ARKG', 'consumer_disc': 'XLY', 'consumer_staples': 'XLP',
+        'space': 'ARKX', 'cybersecurity': 'CIBR', 'quantum': 'QTUM',
+        # 美股通用板块
+        'communication': 'XLC', 'healthcare': 'XLV',
         'energy': 'XLE', 'industrials': 'XLI', 'materials': 'XLB',
-        'real_estate': 'XLRE', 'utilities': 'XLU', 'semiconductors': 'SMH',
+        'real_estate': 'XLRE', 'ev_newenergy': 'DRIV', 'crypto_fintech': 'BLOK',
     }
+
+    # ── A股对标板块 key（用于跨市场对比）──
+    ASHARE_MAPPED_SECTORS = [
+        'ai_application', 'robotics', 'defense', 'lithium_battery', 'nuclear',
+        'utilities', 'metals_mining', 'biotech', 'semiconductors', 'solar',
+        'precious_metals', 'financials', 'ai_infra', 'gaming_media', 'travel',
+        'genomics', 'consumer_disc', 'consumer_staples',
+        'space', 'cybersecurity', 'quantum',
+    ]
 
     # ── 板块中文名 ──
     SECTOR_NAMES = {
-        'indexes': '主要指数', 'mag7': '科技七巨头', 'semiconductors': '半导体',
-        'ai_concept': 'AI概念', 'communication': '通信服务', 'consumer_disc': '可选消费',
-        'consumer_staples': '必需消费', 'healthcare': '医疗健康', 'financials': '金融',
+        'indexes': '主要指数', 'mag7': '科技七巨头',
+        # A股对标板块
+        'semiconductors': '半导体', 'ai_application': 'AI应用',
+        'robotics': '机器人', 'defense': '军工',
+        'lithium_battery': '储能锂电', 'nuclear': '可控核聚变',
+        'utilities': '发电', 'metals_mining': '金属',
+        'biotech': '创新药', 'solar': '光伏',
+        'precious_metals': '贵金属', 'financials': '金融',
+        'ai_infra': '算力/AI基建', 'gaming_media': '传媒游戏',
+        'travel': '旅游', 'genomics': '基因科技',
+        'consumer_disc': '可选消费', 'consumer_staples': '必需消费',
+        'space': '太空探索', 'cybersecurity': '网络安全',
+        'quantum': '量子计算',
+        # 美股特有板块
+        'communication': '通信服务', 'healthcare': '医疗健康',
         'energy': '能源', 'industrials': '工业', 'materials': '材料',
-        'real_estate': '房地产', 'utilities': '公用事业', 'ev_newenergy': '电动车/新能源',
+        'real_estate': '房地产', 'ev_newenergy': '电动车/新能源',
         'crypto_fintech': '加密/金融科技', 'china_adr': '中概股',
     }
 
@@ -182,7 +275,7 @@ class USStockService:
 
     def get_ai_stocks(self) -> List[Dict[str, Any]]:
         """获取AI概念股"""
-        return self.get_watchlist_quotes('ai_concept')
+        return self.get_watchlist_quotes('ai_application')
 
     def get_sector(self, name: str) -> Dict[str, Any]:
         """获取单个板块详情（ETF + 个股）"""
