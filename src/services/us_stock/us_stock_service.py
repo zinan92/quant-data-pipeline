@@ -480,12 +480,76 @@ class USStockService:
         return card
 
     def get_ashare_mapped_sector_cards(self) -> List[Dict[str, Any]]:
-        """获取所有A股对标板块的卡片数据"""
+        """获取所有A股对标板块的卡片数据（批量快速版）"""
+        # 1) 收集所有需要的 symbols（ETF + 个股）
+        all_symbols = set()
+        for key in self.ASHARE_MAPPED_SECTORS:
+            etf = self.SECTOR_ETFS.get(key)
+            if etf:
+                all_symbols.add(etf)
+            if key in self.WATCHLISTS:
+                all_symbols.update(self.WATCHLISTS[key].keys())
+
+        # 2) 一次性批量获取所有报价
+        quotes_map = self.provider.get_quotes_fast(list(all_symbols))
+
+        # 3) 写入缓存，供后续 get_quote 使用
+        now = datetime.now()
+        for symbol, quote in quotes_map.items():
+            self._cache[f"quote_{symbol}"] = {'data': quote, 'timestamp': now}
+
+        # 4) 组装卡片
         cards = []
         for key in self.ASHARE_MAPPED_SECTORS:
-            card = self.get_sector_card(key)
-            if card:
-                cards.append(card)
+            etf_symbol = self.SECTOR_ETFS.get(key)
+            sector_cn = self.SECTOR_NAMES.get(key, key)
+
+            card: Dict[str, Any] = {
+                'key': key,
+                'name_cn': sector_cn,
+                'etf_symbol': etf_symbol,
+                'etf_quote': None,
+                'stock_count': len(self.WATCHLISTS.get(key, {})),
+                'up_count': 0,
+                'down_count': 0,
+                'flat_count': 0,
+                'top_gainer': None,
+                'top_loser': None,
+                'change_pct': 0,
+            }
+
+            # ETF 报价
+            if etf_symbol and etf_symbol in quotes_map:
+                card['etf_quote'] = quotes_map[etf_symbol]
+                card['change_pct'] = quotes_map[etf_symbol].get('change_pct', 0)
+
+            # 个股统计
+            if key in self.WATCHLISTS:
+                for symbol, cn_name in self.WATCHLISTS[key].items():
+                    quote = quotes_map.get(symbol)
+                    if not quote:
+                        continue
+                    pct = quote.get('change_pct', 0)
+                    if pct > 0.01:
+                        card['up_count'] += 1
+                    elif pct < -0.01:
+                        card['down_count'] += 1
+                    else:
+                        card['flat_count'] += 1
+
+                    stock_info = {
+                        'symbol': symbol,
+                        'name': cn_name,
+                        'change_pct': pct,
+                        'price': quote.get('price', 0),
+                    }
+                    if card['top_gainer'] is None or pct > card['top_gainer']['change_pct']:
+                        card['top_gainer'] = stock_info
+                    if card['top_loser'] is None or pct < card['top_loser']['change_pct']:
+                        card['top_loser'] = stock_info
+
+            cards.append(card)
+
         # 按涨跌幅排序
         cards.sort(key=lambda x: x.get('change_pct', 0), reverse=True)
         return cards

@@ -104,7 +104,7 @@ class YahooFinanceProvider:
 
     def get_quotes_batch(self, symbols: List[str]) -> List[Dict]:
         """
-        批量获取实时报价
+        批量获取实时报价 (逐个)
 
         Args:
             symbols: 股票代码列表
@@ -118,6 +118,81 @@ class YahooFinanceProvider:
             if quote:
                 results.append(quote)
         return results
+
+    def get_quotes_fast(self, symbols: List[str]) -> Dict[str, Dict]:
+        """
+        快速批量获取报价 — 使用 yf.download 一次性拉取全部
+        比 get_quotes_batch 快 10-50x（单次HTTP vs 逐个）
+
+        Returns:
+            {symbol: {symbol, name, price, change, change_pct, volume, ...}}
+        """
+        if not symbols:
+            return {}
+
+        try:
+            # 去重
+            unique_symbols = list(set(symbols))
+            logger.info(f"Fast batch: downloading {len(unique_symbols)} symbols")
+
+            # 使用 yf.download 批量获取 2 天数据来计算涨跌
+            df = yf.download(
+                unique_symbols,
+                period='5d',
+                interval='1d',
+                group_by='ticker',
+                progress=False,
+                threads=True,
+            )
+
+            results: Dict[str, Dict] = {}
+
+            if df.empty:
+                return results
+
+            for symbol in unique_symbols:
+                try:
+                    if len(unique_symbols) == 1:
+                        sym_df = df
+                    else:
+                        sym_df = df[symbol] if symbol in df.columns.get_level_values(0) else None
+
+                    if sym_df is None or sym_df.empty:
+                        continue
+
+                    # 去掉 NaN 行
+                    sym_df = sym_df.dropna(subset=['Close'])
+                    if len(sym_df) < 1:
+                        continue
+
+                    close = float(sym_df['Close'].iloc[-1])
+                    prev_close = float(sym_df['Close'].iloc[-2]) if len(sym_df) >= 2 else close
+                    volume = int(sym_df['Volume'].iloc[-1]) if 'Volume' in sym_df.columns else 0
+
+                    change = close - prev_close
+                    change_pct = (change / prev_close * 100) if prev_close else 0
+
+                    results[symbol] = {
+                        'symbol': symbol,
+                        'name': symbol,  # yf.download 不返回名称
+                        'price': round(close, 2),
+                        'change': round(change, 2),
+                        'change_pct': round(change_pct, 2),
+                        'volume': volume,
+                        'market_cap': 0,
+                        'pe_ratio': 0,
+                        'last_update': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    }
+                except Exception as e:
+                    logger.debug(f"Fast batch: skip {symbol}: {e}")
+                    continue
+
+            logger.info(f"Fast batch: got {len(results)}/{len(unique_symbols)} quotes")
+            return results
+
+        except Exception as e:
+            logger.error(f"Fast batch download failed: {e}")
+            return {}
 
     def get_kline(
         self,
