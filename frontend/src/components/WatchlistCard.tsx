@@ -28,10 +28,11 @@ interface Props {
   realtimePrice?: RealtimePrice;
   klineLimit?: number;
   sector?: string;
+  positioning?: string;
   onSectorChange?: (ticker: string, newSector: string) => void;
 }
 
-export function WatchlistCard({ symbol, maConfig, realtimePrice, klineLimit = 120, sector, onSectorChange }: Props) {
+export function WatchlistCard({ symbol, maConfig, realtimePrice, klineLimit = 120, sector, positioning, onSectorChange }: Props) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isEarningsExpanded, setIsEarningsExpanded] = useState(false);
   const [isInWatchlist, setIsInWatchlist] = useState<boolean | null>(null); // null表示加载中
@@ -331,6 +332,9 @@ export function WatchlistCard({ symbol, maConfig, realtimePrice, klineLimit = 12
               <span className={`board-tag ${boardInfo.className}`}>{boardInfo.label}</span>
             )}
             <span className="watchlist-card__ticker">{symbol.ticker}</span>
+            {positioning && (
+              <span className="watchlist-card__positioning">{positioning}</span>
+            )}
             <div className="watchlist-card__sector-wrapper" ref={sectorDropdownRef}>
               <span
                 className="watchlist-card__sector watchlist-card__sector--clickable"

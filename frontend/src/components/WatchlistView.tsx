@@ -113,6 +113,10 @@ export function WatchlistView({ maConfig, onMAConfigChange, onPortfolioClick }: 
     return new Map<string, string>(Object.entries(sectorsData?.sectors ?? {}));
   }, [sectorsData]);
 
+  const positioningMap = useMemo(() => {
+    return new Map<string, string>(Object.entries(sectorsData?.positioning ?? {}));
+  }, [sectorsData]);
+
   // 股票名称映射
   const stockNamesMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -529,6 +533,7 @@ export function WatchlistView({ maConfig, onMAConfigChange, onPortfolioClick }: 
               realtimePrice={price}
               klineLimit={klineLimit}
               sector={sectorsMap.get(tickerCode)}
+              positioning={positioningMap.get(tickerCode)}
               onSectorChange={() => {
                 queryClient.invalidateQueries({ queryKey: ["sectors-all"] });
               }}

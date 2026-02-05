@@ -23,6 +23,7 @@ class SectorResponse(BaseModel):
 
 class SectorBatchResponse(BaseModel):
     sectors: dict[str, str]  # ticker -> sector
+    positioning: dict[str, str] | None = None  # ticker -> positioning (optional)
 
 
 class SectorTurnoverItem(BaseModel):
@@ -361,14 +362,15 @@ async def get_sectors_batch(
 async def get_all_sectors(
     db: Session = Depends(get_db),
 ):
-    """获取所有股票的赛道分类"""
+    """获取所有股票的赛道分类（含positioning定位）"""
     try:
         result = db.execute(
-            text("SELECT ticker, sector FROM stock_sectors")
+            text("SELECT ticker, sector, positioning FROM stock_sectors")
         ).fetchall()
 
         sectors = {row[0]: row[1] for row in result}
-        return SectorBatchResponse(sectors=sectors)
+        positioning = {row[0]: row[2] for row in result if row[2]}
+        return SectorBatchResponse(sectors=sectors, positioning=positioning)
     except Exception as e:
         logger.exception("获取所有赛道分类失败")
         raise HTTPException(status_code=500, detail=str(e))
