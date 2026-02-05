@@ -359,8 +359,15 @@ class USStockService:
 
         klines = []
         for _, row in df.iterrows():
+            # 转换时间为字符串 (YYYY-MM-DD)
+            raw_time = row.get('date', row.get('datetime', ''))
+            if hasattr(raw_time, 'strftime'):
+                time_str = raw_time.strftime('%Y-%m-%d')
+            else:
+                time_str = str(raw_time)[:10]
+
             klines.append({
-                'time': row.get('date', row.get('datetime', '')),
+                'time': time_str,
                 'open': float(row.get('open', 0)),
                 'high': float(row.get('high', 0)),
                 'low': float(row.get('low', 0)),

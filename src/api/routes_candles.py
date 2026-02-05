@@ -168,11 +168,7 @@ def _fetch_and_save_klines(
             from src.services.tushare_data_provider import TushareDataProvider
             from src.models import Timeframe as TF
             provider = TushareDataProvider()
-            ts_df = provider.fetch_candles(ticker, TF.DAY, limit)
-            if ts_df is not None and not ts_df.empty:
-                df = ts_df.rename(columns={"timestamp": "timestamp"})
-            else:
-                df = None
+            df = provider.fetch_candles(ticker, TF.DAY, limit)
         else:
             # 30分钟用新浪
             provider = SinaKlineProvider(delay=0.1)
@@ -186,14 +182,20 @@ def _fetch_and_save_klines(
         klines = []
         if timeframe == "day":
             for _, row in df.head(limit).iterrows():
+                # TushareDataProvider.fetch_candles returns: timestamp, open, high, low, close, volume, turnover
+                ts = row["timestamp"]
+                if hasattr(ts, "strftime"):
+                    dt_str = ts.strftime("%Y-%m-%d")
+                else:
+                    dt_str = str(ts)[:10]
                 klines.append({
-                    "datetime": row["trade_date"],
+                    "datetime": dt_str,
                     "open": float(row["open"]),
                     "high": float(row["high"]),
                     "low": float(row["low"]),
                     "close": float(row["close"]),
-                    "volume": int(row["vol"]) if row["vol"] else 0,
-                    "amount": float(row.get("amount", 0)),
+                    "volume": int(row["volume"]) if row["volume"] else 0,
+                    "amount": float(row.get("turnover", 0)),
                 })
         else:
             for _, row in df.iterrows():
