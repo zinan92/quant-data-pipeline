@@ -1150,10 +1150,38 @@ def section_calendar() -> list[str]:
 # ═══════════════════════════════════════════════════════════════
 # Main: Assemble all sections
 # ═══════════════════════════════════════════════════════════════
+def healthcheck(retries: int = 3, wait: float = 2.0) -> bool:
+    """Ping API before generating briefing. Retries with backoff."""
+    for i in range(retries):
+        try:
+            r = requests.get(
+                f"{API_BASE}/api/us-stock/indexes",
+                timeout=(CONNECT_TIMEOUT, REQUEST_TIMEOUT),
+            )
+            if r.ok and r.json().get("quotes"):
+                return True
+        except Exception:
+            pass
+        if i < retries - 1:
+            time_mod.sleep(wait * (i + 1))
+    return False
+
+
 def format_briefing(show_time: bool = False) -> str:
     now = datetime.now()
     time_label = now.strftime("%Y-%m-%d %H:%M")
     weekday_cn = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"][now.weekday()]
+
+    # ── Healthcheck: make sure API is alive before fetching ──
+    if not healthcheck():
+        return (
+            f"{'═' * 50}\n"
+            f"🇺🇸 **美股简报** ({time_label} {weekday_cn})\n"
+            f"{'═' * 50}\n\n"
+            f"❌ API 不可用 (http://127.0.0.1:8000)\n"
+            f"尝试了3次健康检查均失败，请检查 uvicorn 进程是否正常运行。\n"
+            f"{'═' * 50}"
+        )
 
     output = []
     output.append(f"{'═' * 50}")

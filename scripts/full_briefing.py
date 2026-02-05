@@ -10,7 +10,7 @@
 2. 异动统计        — /api/news/market-alerts
 3. 盘中全程回顾表格  — today_index_snapshots.json
 4. FLOW-TOP20     — akshare 实时概念资金流
-5. 🧠 Wendy分析   — 规则引擎，纯确定性
+5. 🧠 Morning分析   — 规则引擎，纯确定性
 6. 自选股异动      — 自选股涨跌排行
 7. 快讯           — /api/news/latest
 
@@ -305,7 +305,7 @@ def section_flow_top20() -> tuple[list[str], object]:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 5. 🧠 Wendy分析 (Rule-based, ZERO AI)
+# 5. 🧠 Morning分析 (Rule-based, ZERO AI)
 # ═══════════════════════════════════════════════════════════════
 def section_analysis(index_data: dict, flow_df, alert_data: dict = None) -> tuple[list[str], dict]:
     """Returns (lines, signal_data) — signal_data used by section_summary."""
@@ -313,11 +313,11 @@ def section_analysis(index_data: dict, flow_df, alert_data: dict = None) -> tupl
         lines, signal_data = _section_analysis_inner(index_data, flow_df, alert_data)
         return lines, signal_data
     except Exception as e:
-        return [f"⚠️ [Wendy分析] 获取失败: {e}"], {}
+        return [f"⚠️ [Morning分析] 获取失败: {e}"], {}
 
 
 def _section_analysis_inner(index_data: dict, flow_df, alert_data: dict = None) -> tuple[list[str], dict]:
-    lines = ["🧠 **Wendy分析**"]
+    lines = ["🧠 **Morning分析**"]
     signal_data = {}  # Collect all signal data for summary
 
     # ── 5a. 市场定性: 上证 vs 创业板剪刀差 ──
@@ -921,7 +921,7 @@ def main():
         output_lines.extend(flow_result)
     output_lines.append("")
 
-    # ── 5. Wendy分析 ──
+    # ── 5. Morning分析 ──
     analysis_result = section_analysis(index_data, flow_df, alert_data)
     signal_data = {}
     if isinstance(analysis_result, tuple):
