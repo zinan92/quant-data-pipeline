@@ -105,6 +105,41 @@ async def get_all_sectors():
     return {"count": len(sectors), "sectors": sectors}
 
 
+@router.get("/sectors/cards")
+async def get_sector_cards():
+    """获取A股对标板块卡片数据（21个板块，含ETF涨跌、个股统计、领涨领跌）"""
+    service = get_us_stock_service()
+    cards = service.get_ashare_mapped_sector_cards()
+    return {"count": len(cards), "cards": cards}
+
+
+@router.get("/sectors/cards/{sector_key}")
+async def get_sector_card_detail(sector_key: str):
+    """获取单个板块卡片 + K线数据"""
+    service = get_us_stock_service()
+    card = service.get_sector_card(sector_key)
+    if not card:
+        raise HTTPException(status_code=404, detail=f"Sector '{sector_key}' not found")
+
+    # 附加 ETF K线数据
+    if card.get('etf_symbol'):
+        kline = service.get_kline(card['etf_symbol'], period='3mo', interval='1d')
+        card['etf_kline'] = kline
+
+    # 附加个股详情
+    if sector_key in service.WATCHLISTS:
+        stocks = []
+        for symbol, cn_name in service.WATCHLISTS[sector_key].items():
+            quote = service.get_quote(symbol)
+            if quote:
+                quote['cn_name'] = cn_name
+                stocks.append(quote)
+        stocks.sort(key=lambda x: x.get('change_pct', 0), reverse=True)
+        card['stocks'] = stocks
+
+    return card
+
+
 @router.get("/sector/{name}")
 async def get_sector_detail(name: str):
     """

@@ -422,6 +422,74 @@ class USStockService:
 
         return summary
 
+    def get_sector_card(self, sector_key: str) -> Optional[Dict[str, Any]]:
+        """获取单个板块的卡片数据（ETF + 个股统计 + K线）"""
+        if sector_key not in self.WATCHLISTS:
+            return None
+
+        etf_symbol = self.SECTOR_ETFS.get(sector_key)
+        sector_cn = self.SECTOR_NAMES.get(sector_key, sector_key)
+
+        card: Dict[str, Any] = {
+            'key': sector_key,
+            'name_cn': sector_cn,
+            'etf_symbol': etf_symbol,
+            'etf_quote': None,
+            'etf_kline': None,
+            'stock_count': len(self.WATCHLISTS[sector_key]),
+            'up_count': 0,
+            'down_count': 0,
+            'flat_count': 0,
+            'top_gainer': None,
+            'top_loser': None,
+            'change_pct': 0,
+        }
+
+        # ETF 报价
+        if etf_symbol:
+            etf_quote = self.get_quote(etf_symbol)
+            if etf_quote:
+                card['etf_quote'] = etf_quote
+                card['change_pct'] = etf_quote.get('change_pct', 0)
+
+        # 个股统计
+        stocks = self.WATCHLISTS[sector_key]
+        for symbol, cn_name in stocks.items():
+            quote = self.get_quote(symbol)
+            if not quote:
+                continue
+            pct = quote.get('change_pct', 0)
+            if pct > 0.01:
+                card['up_count'] += 1
+            elif pct < -0.01:
+                card['down_count'] += 1
+            else:
+                card['flat_count'] += 1
+
+            stock_info = {
+                'symbol': symbol,
+                'name': cn_name,
+                'change_pct': pct,
+                'price': quote.get('price', 0),
+            }
+            if card['top_gainer'] is None or pct > card['top_gainer']['change_pct']:
+                card['top_gainer'] = stock_info
+            if card['top_loser'] is None or pct < card['top_loser']['change_pct']:
+                card['top_loser'] = stock_info
+
+        return card
+
+    def get_ashare_mapped_sector_cards(self) -> List[Dict[str, Any]]:
+        """获取所有A股对标板块的卡片数据"""
+        cards = []
+        for key in self.ASHARE_MAPPED_SECTORS:
+            card = self.get_sector_card(key)
+            if card:
+                cards.append(card)
+        # 按涨跌幅排序
+        cards.sort(key=lambda x: x.get('change_pct', 0), reverse=True)
+        return cards
+
     def get_available_watchlists(self) -> Dict[str, List[str]]:
         """获取可用的监控列表"""
         return {

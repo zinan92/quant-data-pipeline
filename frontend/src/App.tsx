@@ -10,6 +10,7 @@ import { MomentumSignalsView } from "./components/MomentumSignalsView";
 import { ConceptMonitorTable } from "./components/ConceptMonitorTable";
 import { ConceptKlinePanel } from "./components/ConceptKlinePanel";
 import { MultiAssetDashboard } from "./components/MultiAssetDashboard";
+import { USSectorCards } from "./components/USSectorCards";
 import type { MAConfig } from "./types/chartConfig";
 import { DEFAULT_MA_CONFIG } from "./types/chartConfig";
 
@@ -62,6 +63,12 @@ function AppShell() {
             onClick={() => navigate("/portfolio")}
           >
             持仓
+          </button>
+          <button
+            className={`topbar__button ${currentPath === "/us-sectors" ? "topbar__button--primary" : "topbar__button--secondary"}`}
+            onClick={() => navigate("/us-sectors")}
+          >
+            🇺🇸 美股板块
           </button>
           <button
             className={`topbar__button ${currentPath === "/dashboard" ? "topbar__button--primary" : "topbar__button--secondary"}`}
@@ -141,6 +148,13 @@ function AppShell() {
           <Route path="/signals" element={
             <div className="app__content">
               <MomentumSignalsView />
+            </div>
+          } />
+
+          {/* US Sector Cards */}
+          <Route path="/us-sectors" element={
+            <div className="app__content">
+              <USSectorCards />
             </div>
           } />
 

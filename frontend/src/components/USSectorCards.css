@@ -1,0 +1,340 @@
+/* ── US Sector Cards Panel ── */
+
+.us-sectors-panel {
+  padding: 16px;
+}
+
+.us-sectors-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.us-sectors-panel__title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #e0e6f0;
+  margin: 0;
+}
+
+.us-sectors-panel__subtitle {
+  font-size: 13px;
+  font-weight: 400;
+  color: #8f9bbd;
+  margin-left: 8px;
+}
+
+.us-sectors-panel__refresh {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background 0.15s;
+}
+
+.us-sectors-panel__refresh:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.us-sectors-panel__error {
+  background: rgba(239, 95, 124, 0.1);
+  border: 1px solid rgba(239, 95, 124, 0.3);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  color: #ef5f7c;
+  font-size: 13px;
+}
+
+.us-sectors-panel__error button {
+  margin-left: 12px;
+  background: rgba(239, 95, 124, 0.2);
+  border: none;
+  border-radius: 4px;
+  padding: 4px 10px;
+  color: #ef5f7c;
+  cursor: pointer;
+}
+
+.us-sectors-panel__loading {
+  text-align: center;
+  color: #8f9bbd;
+  padding: 40px 0;
+  font-size: 14px;
+}
+
+/* ── Card Grid ── */
+
+.us-sectors-panel__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+/* ── Individual Card ── */
+
+.us-sector-card {
+  background: #1a2035;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.us-sector-card:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.us-sector-card--selected {
+  border-color: rgba(100, 150, 255, 0.4) !important;
+  background: #1e2745;
+}
+
+.us-sector-card--up {
+  border-left: 3px solid rgba(239, 95, 124, 0.6);
+}
+
+.us-sector-card--down {
+  border-left: 3px solid rgba(35, 193, 159, 0.6);
+}
+
+/* Header */
+.us-sector-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.us-sector-card__name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e0e6f0;
+}
+
+.us-sector-card__etf {
+  font-size: 11px;
+  color: #8f9bbd;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+/* Change % */
+.us-sector-card__change {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.us-sector-card--up .us-sector-card__change {
+  color: #ef5f7c;
+}
+
+.us-sector-card--down .us-sector-card__change {
+  color: #23c19f;
+}
+
+/* Stats row */
+.us-sector-card__stats {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.us-sector-card__stat--up {
+  color: #ef5f7c;
+}
+
+.us-sector-card__stat--down {
+  color: #23c19f;
+}
+
+.us-sector-card__stat--total {
+  color: #8f9bbd;
+  margin-left: auto;
+}
+
+/* Extreme (gainer / loser) */
+.us-sector-card__extreme {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #8f9bbd;
+  margin-top: 2px;
+}
+
+.us-sector-card__extreme-label {
+  color: #6b7899;
+  min-width: 22px;
+}
+
+.us-sector-card__extreme-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 80px;
+}
+
+.us-sector-card__extreme-value {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-weight: 500;
+}
+
+.us-sector-card__extreme-value--up {
+  color: #ef5f7c;
+}
+
+.us-sector-card__extreme-value--down {
+  color: #23c19f;
+}
+
+/* Sparkline */
+.us-sector-sparkline {
+  flex-shrink: 0;
+}
+
+/* ── Detail Panel ── */
+
+.us-sectors-panel__detail {
+  margin-top: 16px;
+  animation: us-sector-detail-in 0.2s ease;
+}
+
+@keyframes us-sector-detail-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.us-sector-detail {
+  background: #1a2035;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.us-sector-detail__loading,
+.us-sector-detail__error {
+  text-align: center;
+  color: #8f9bbd;
+  padding: 32px 0;
+  font-size: 14px;
+}
+
+.us-sector-detail__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.us-sector-detail__header h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #e0e6f0;
+  margin: 0;
+}
+
+.us-sector-detail__price {
+  font-size: 15px;
+  font-weight: 600;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.us-sector-detail__price.up {
+  color: #ef5f7c;
+}
+
+.us-sector-detail__price.down {
+  color: #23c19f;
+}
+
+.us-sector-detail__chart {
+  margin-bottom: 16px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Stocks table */
+.us-sector-detail__stocks {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.us-sector-detail__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.us-sector-detail__table th {
+  text-align: left;
+  padding: 8px 12px;
+  color: #8f9bbd;
+  font-weight: 500;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  position: sticky;
+  top: 0;
+  background: #1a2035;
+}
+
+.us-sector-detail__table td {
+  padding: 6px 12px;
+  color: #c8d0e8;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.us-sector-detail__table tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.us-sector-detail__symbol {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: #6b9fff !important;
+}
+
+.us-sector-detail__table td.up {
+  color: #ef5f7c;
+  font-weight: 500;
+}
+
+.us-sector-detail__table td.down {
+  color: #23c19f;
+  font-weight: 500;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .us-sectors-panel__grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .us-sector-card {
+    padding: 10px 12px;
+  }
+
+  .us-sector-card__change {
+    font-size: 16px;
+  }
+}
