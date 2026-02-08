@@ -37,21 +37,27 @@ def format_briefing():
                 lines.append(f"{icon} {name}: {q['price']:,.2f} ({q['change_pct']:+.2f}%)")
         lines.append("")
 
-    # 2. 板块表现 — 按涨跌排序
+    # 2. 板块ETF表现 — 全部按涨跌排序
     sec = fetch("/api/us-stock/sectors")
     if sec.get("sectors"):
         etf_sectors = [(s["name_cn"], s["etf"]) for s in sec["sectors"] if s.get("etf")]
         etf_sectors.sort(key=lambda x: x[1]["change_pct"], reverse=True)
         if etf_sectors:
-            lines.append("🏛️ 板块表现")
-            top3 = etf_sectors[:3]
-            bot3 = etf_sectors[-3:]
-            lines.append("领涨: " + " | ".join(
-                f"{n}({e['symbol']}) {e['change_pct']:+.2f}%" for n, e in top3
-            ))
-            lines.append("领跌: " + " | ".join(
-                f"{n}({e['symbol']}) {e['change_pct']:+.2f}%" for n, e in bot3
-            ))
+            lines.append(f"🏛️ 板块ETF ({len(etf_sectors)}个)")
+            # 分成涨和跌两组
+            gainers = [(n, e) for n, e in etf_sectors if e["change_pct"] >= 0]
+            losers = [(n, e) for n, e in etf_sectors if e["change_pct"] < 0]
+            
+            # 涨的板块
+            if gainers:
+                for n, e in gainers:
+                    lines.append(f"  🟢 {n}({e['symbol']}) {e['change_pct']:+.2f}%")
+            
+            # 跌的板块
+            if losers:
+                for n, e in losers:
+                    lines.append(f"  🔴 {n}({e['symbol']}) {e['change_pct']:+.2f}%")
+            
             lines.append("")
 
     # 3. Mag7

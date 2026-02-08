@@ -331,6 +331,9 @@ export function WatchlistCard({ symbol, maConfig, realtimePrice, klineLimit = 12
               <span className={`board-tag ${boardInfo.className}`}>{boardInfo.label}</span>
             )}
             <span className="watchlist-card__ticker">{symbol.ticker}</span>
+            {symbol.positioning && (
+              <span className="watchlist-card__positioning">{symbol.positioning}</span>
+            )}
             <div className="watchlist-card__sector-wrapper" ref={sectorDropdownRef}>
               <span
                 className="watchlist-card__sector watchlist-card__sector--clickable"

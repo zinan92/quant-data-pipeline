@@ -52,6 +52,11 @@ class Watchlist(Base):
         default=0,
         comment="是否重点关注"
     )
+    positioning: Mapped[str | None] = mapped_column(
+        String(256),
+        nullable=True,
+        comment="公司一句话定位描述"
+    )
 
 
 class KlineEvaluation(Base):
