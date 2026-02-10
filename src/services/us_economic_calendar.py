@@ -2,11 +2,12 @@
 美国经济日历服务
 提供重要经济数据发布日程（半静态 + 自动判断）
 """
-import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime, date
 
-logger = logging.getLogger(__name__)
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 # ── 2026 年重要经济事件日历 ──
 # 基于历年发布节奏推算；FOMC日期来自美联储公布的2026日程

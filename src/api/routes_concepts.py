@@ -12,6 +12,8 @@ from typing import List, Optional
 from functools import lru_cache
 
 from src.api.dependencies import get_db
+from src.config import get_settings
+from src.exceptions import DatabaseError, ServiceUnavailableError
 from src.models import KlineTimeframe, SymbolType
 from src.schemas.normalized import NormalizedTicker
 from src.services.kline_service import KlineService
@@ -252,9 +254,11 @@ async def get_concept_realtime(code: str):
                 'last_update': data.get('update', '')
             }
     except httpx.RequestError as e:
-        raise HTTPException(status_code=503, detail=f"请求失败: {e}")
+        logger.exception("概念板块实时数据请求失败")
+        raise ServiceUnavailableError(service="concept_realtime", reason=str(e) if get_settings().debug else "Service unavailable")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取实时数据失败: {e}")
+        logger.exception("获取概念板块实时数据失败")
+        raise DatabaseError(operation="get_concept_realtime", reason=str(e) if get_settings().debug else "Internal server error")
 
 
 @router.get("/realtime-batch")
@@ -270,7 +274,8 @@ async def get_concepts_realtime_batch(codes: str = Query(..., description="逗�
     async def fetch_one(code: str):
         try:
             return await get_concept_realtime(code)
-        except:
+        except Exception as e:
+            logger.warning(f"Failed to fetch realtime for concept {code}: {e}")
             return None
 
     results = await asyncio.gather(*[fetch_one(c) for c in code_list])
@@ -344,7 +349,7 @@ def get_concept_kline(
         raise
     except Exception as e:
         logger.exception(f"获取概念K线失败: {code}")
-        raise HTTPException(status_code=500, detail=f"获取K线数据失败: {str(e)}")
+        raise DatabaseError(operation="get_concept_kline", reason=str(e) if get_settings().debug else "Internal server error")
 
 
 @lru_cache(maxsize=1)
@@ -383,10 +388,9 @@ def get_concepts_by_ticker(ticker: str):
 
 
 @router.get("/{concept_name}/stocks")
-def get_concept_stocks(concept_name: str):
+def get_concept_stocks(concept_name: str, db: Session = Depends(get_db)):
     """获取概念板块的成分股列表"""
     from sqlalchemy import select
-    from ..database import session_scope
     from ..models import SymbolMetadata
 
     mapping = load_concept_mapping()
@@ -409,26 +413,25 @@ def get_concept_stocks(concept_name: str):
     # 从数据库获取股票元数据
     # 注意：数据库中的ticker格式是6位代码（无后缀），需要用原始stock_codes查询
     meta_map = {}
-    with session_scope() as session:
-        if stock_codes:
-            metas = session.execute(
-                select(SymbolMetadata).where(
-                    SymbolMetadata.ticker.in_(stock_codes)
-                )
-            ).scalars().all()
+    if stock_codes:
+        metas = db.execute(
+            select(SymbolMetadata).where(
+                SymbolMetadata.ticker.in_(stock_codes)
+            )
+        ).scalars().all()
 
-            for meta in metas:
-                # 将数据库返回的6位代码映射到带后缀的ticker
-                ticker_with_suffix = code_to_ticker(meta.ticker)
-                meta_map[ticker_with_suffix] = {
-                    "ticker": ticker_with_suffix,
-                    "name": meta.name,
-                    "industryLv1": meta.industry_lv1,
-                    "totalMv": meta.total_mv,
-                    "circMv": meta.circ_mv,
-                    "peTtm": meta.pe_ttm,
-                    "pb": meta.pb,
-                }
+        for meta in metas:
+            # 将数据库返回的6位代码映射到带后缀的ticker
+            ticker_with_suffix = code_to_ticker(meta.ticker)
+            meta_map[ticker_with_suffix] = {
+                "ticker": ticker_with_suffix,
+                "name": meta.name,
+                "industryLv1": meta.industry_lv1,
+                "totalMv": meta.total_mv,
+                "circMv": meta.circ_mv,
+                "peTtm": meta.pe_ttm,
+                "pb": meta.pb,
+            }
 
     # 返回所有股票，有元数据的用元数据，没有的用基本信息
     result = []

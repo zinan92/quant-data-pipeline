@@ -1,9 +1,15 @@
 """
 财经新闻情绪分析 API
 """
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 from typing import Dict, List, Optional
 from pydantic import BaseModel
+
+from src.config import get_settings
+from src.exceptions import DatabaseError
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/sentiment", tags=["sentiment"])
 
@@ -51,7 +57,8 @@ async def analyze_news_sentiment(
         from src.services.news_sentiment import get_news_sentiment_analysis
         return get_news_sentiment_analysis(limit)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("分析新闻情绪失败")
+        raise DatabaseError(operation="analyze_news_sentiment", reason=str(e) if get_settings().debug else "Internal server error")
 
 
 @router.get("/analyze-text")
@@ -68,7 +75,8 @@ async def analyze_text_sentiment(text: str = Query(..., description="要分析�
         finally:
             analyzer.close()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("分析文本情绪失败")
+        raise DatabaseError(operation="analyze_text_sentiment", reason=str(e) if get_settings().debug else "Internal server error")
 
 
 @router.get("/market-mood")
@@ -110,4 +118,5 @@ async def get_market_mood():
         }
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("获取市场情绪指标失败")
+        raise DatabaseError(operation="get_market_mood", reason=str(e) if get_settings().debug else "Internal server error")

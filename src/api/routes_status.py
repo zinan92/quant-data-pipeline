@@ -3,7 +3,7 @@
 提供数据刷新时间、数据源新鲜度检查等功能
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
@@ -12,6 +12,7 @@ from sqlalchemy import func, and_
 from sqlalchemy.orm import Session
 
 from src.api.dependencies import get_data_service, get_db
+from src.config import get_settings
 from src.models import Kline, KlineTimeframe, SymbolType
 from src.services.data_pipeline import MarketDataService
 from src.utils.logging import get_logger
@@ -71,13 +72,14 @@ def get_data_freshness(db: Session = Depends(get_db)) -> dict[str, Any]:
                 if not last_time:
                     issues.append(f"{key}: 无数据")
             except Exception as e:
+                logger.exception(f"数据新鲜度查询失败: {key}")
                 sources[key] = {
                     "last_update": None,
                     "record_count": 0,
                     "status": "error",
-                    "error": str(e),
+                    "error": str(e) if get_settings().debug else "Internal server error",
                 }
-                issues.append(f"{key}: 查询失败 - {e}")
+                issues.append(f"{key}: 查询失败")
 
     # 2. 检查数据文件
     data_files = {
@@ -114,4 +116,30 @@ def get_data_freshness(db: Session = Depends(get_db)) -> dict[str, Any]:
         "sources": sources,
         "issues": issues,
         "issue_count": len(issues),
+    }
+
+
+@router.get("/update-times")
+def get_update_times(db: Session = Depends(get_db)) -> dict[str, Any]:
+    """返回数据更新时间信息，用于前端显示。"""
+    now = datetime.now()
+
+    kline_times = {}
+    for symbol_type in [SymbolType.STOCK, SymbolType.INDEX, SymbolType.CONCEPT]:
+        for timeframe in [KlineTimeframe.DAY, KlineTimeframe.MINS_30]:
+            key = f"{symbol_type.value}_{timeframe.value}"
+            last_time = db.query(func.max(Kline.trade_time)).filter(
+                Kline.symbol_type == symbol_type,
+                Kline.timeframe == timeframe,
+            ).scalar()
+
+            kline_times[key] = {
+                "symbol_type": symbol_type.value,
+                "timeframe": timeframe.value,
+                "last_update": last_time if last_time else None,
+            }
+
+    return {
+        "current_time": now.isoformat(),
+        "kline_times": kline_times,
     }

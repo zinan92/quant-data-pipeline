@@ -3,12 +3,18 @@
 读取独立进程生成的JSON文件，不阻塞FastAPI
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from src.api.auth import verify_api_key
 from pydantic import BaseModel
 from typing import Optional
 import json
 from pathlib import Path
 from datetime import datetime
+
+from src.config import get_settings
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -177,11 +183,12 @@ async def get_status():
             "message": "数据就绪"
         }
     except Exception as e:
+        logger.exception("读取监控缓存状态失败")
         return {
             "is_ready": False,
             "last_update": None,
             "cache_file": str(CACHE_FILE),
-            "error": str(e),
+            "error": str(e) if get_settings().debug else "Internal server error",
             "message": "读取缓存失败"
         }
 
@@ -250,14 +257,16 @@ async def get_momentum_signals():
         )
 
     except Exception as e:
+        logger.exception("读取动量信号失败")
+        detail = str(e) if get_settings().debug else "Internal server error"
         raise HTTPException(
             status_code=500,
-            detail=f"读取动量信号失败: {str(e)}"
+            detail=detail
         )
 
 
 @router.post("/momentum-signals/refresh")
-async def refresh_momentum_signals():
+async def refresh_momentum_signals(_: None = Depends(verify_api_key)):
     """
     强制刷新动量信号数据
     触发后台更新脚本运行一次
@@ -283,7 +292,9 @@ async def refresh_momentum_signals():
         }
 
     except Exception as e:
+        logger.exception("触发动量信号刷新失败")
+        detail = str(e) if get_settings().debug else "Internal server error"
         raise HTTPException(
             status_code=500,
-            detail=f"触发刷新失败: {str(e)}"
+            detail=detail
         )

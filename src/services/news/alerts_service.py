@@ -2,13 +2,14 @@
 异动提醒服务
 监控盘口异动：大笔买入、大笔卖出、封涨停板、打开涨停板等
 """
-import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import akshare as ak
 import pandas as pd
 
-logger = logging.getLogger(__name__)
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class AlertsService:

@@ -10,6 +10,8 @@ from pydantic import BaseModel
 
 import yfinance as yf
 
+from src.config import get_settings
+from src.exceptions import DatabaseError
 from src.utils.logging import get_logger
 
 router = APIRouter()
@@ -118,7 +120,7 @@ async def get_commodities_realtime():
 
     except Exception as e:
         logger.exception("Failed to fetch commodities data")
-        raise HTTPException(status_code=500, detail=f"获取大宗商品数据失败: {str(e)}")
+        raise DatabaseError(operation="get_commodities_realtime", reason=str(e) if get_settings().debug else "Internal server error")
 
 
 @router.get("/klines/{symbol}")
@@ -170,4 +172,4 @@ async def get_commodity_klines(
         raise
     except Exception as e:
         logger.exception(f"Failed to fetch klines for {symbol}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise DatabaseError(operation="get_commodity_klines", reason=str(e) if get_settings().debug else "Internal server error")

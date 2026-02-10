@@ -6,15 +6,21 @@ import csv
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from src.api.auth import verify_api_key
 from pydantic import BaseModel
 from sqlalchemy import func
+from sqlalchemy.orm import Session
 
-from src.api.dependencies import get_data_service
+from src.config import get_settings
+from src.utils.logging import get_logger
+
+from src.api.dependencies import get_data_service, get_db
 from src.services.board_service import BoardService as BoardMappingService
 from src.services.data_pipeline import MarketDataService
-from src.database import session_scope
 from src.models import IndustryDaily, SymbolMetadata, BoardMapping, SuperCategoryDaily
 from src.schemas import SymbolMeta
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -53,6 +59,7 @@ class StockConceptsResponse(BaseModel):
 @router.post("/build", response_model=BuildMappingsResponse)
 def build_board_mappings(
     payload: BuildMappingsRequest,
+    _: None = Depends(verify_api_key),
 ) -> BuildMappingsResponse:
     """
     一次性构建板块映射
@@ -79,15 +86,18 @@ def build_board_mappings(
             message=message
         )
     except Exception as e:
+        logger.exception("Failed to build board mappings")
+        detail = str(e) if get_settings().debug else "Internal server error"
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to build board mappings: {str(e)}"
+            detail=detail
         )
 
 
 @router.post("/verify", response_model=VerifyChangesResponse)
 def verify_board_changes(
     payload: VerifyChangesRequest,
+    _: None = Depends(verify_api_key),
 ) -> VerifyChangesResponse:
     """
     验证单个板块的成分股是否有变化
@@ -108,9 +118,11 @@ def verify_board_changes(
             **result
         )
     except Exception as e:
+        logger.exception("Failed to verify board changes")
+        detail = str(e) if get_settings().debug else "Internal server error"
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to verify board changes: {str(e)}"
+            detail=detail
         )
 
 
@@ -130,15 +142,18 @@ def get_stock_concepts(
             concepts=concepts
         )
     except Exception as e:
+        logger.exception("Failed to get stock concepts")
+        detail = str(e) if get_settings().debug else "Internal server error"
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to get stock concepts: {str(e)}"
+            detail=detail
         )
 
 
 @router.get("/list")
 def list_board_mappings(
     board_type: Optional[str] = None,
+    db: Session = Depends(get_db),
 ) -> dict:
     """
     列出所有板块映射
@@ -148,26 +163,25 @@ def list_board_mappings(
     """
     from sqlalchemy import select
 
-    with session_scope() as session:
-        stmt = select(BoardMapping)
-        if board_type:
-            stmt = stmt.where(BoardMapping.board_type == board_type)
+    stmt = select(BoardMapping)
+    if board_type:
+        stmt = stmt.where(BoardMapping.board_type == board_type)
 
-        mappings = session.scalars(stmt).all()
+    mappings = db.scalars(stmt).all()
 
-        return {
-            "total": len(mappings),
-            "boards": [
-                {
-                    "name": m.board_name,
-                    "type": m.board_type,
-                    "code": m.board_code,
-                    "stock_count": len(m.constituents),
-                    "last_updated": m.last_updated.isoformat() if m.last_updated else None
-                }
-                for m in mappings
-            ]
-        }
+    return {
+        "total": len(mappings),
+        "boards": [
+            {
+                "name": m.board_name,
+                "type": m.board_type,
+                "code": m.board_code,
+                "stock_count": len(m.constituents),
+                "last_updated": m.last_updated.isoformat() if m.last_updated else None
+            }
+            for m in mappings
+        ]
+    }
 
 
 def calculate_market_cap_growth(session, board_name: str) -> Dict[str, float | None]:
@@ -317,81 +331,79 @@ def _load_board_symbols(session, board_name: str) -> list[SymbolMetadata]:
 
 
 @router.get("/{board_name}/stats")
-def get_board_stats(board_name: str) -> Dict[str, Any]:
+def get_board_stats(board_name: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
     """获取板块详细统计信息"""
-    with session_scope() as session:
-        # 获取最新交易日的板块数据
-        latest_date_subq = session.query(
-            func.max(IndustryDaily.trade_date)
-        ).scalar_subquery()
+    # 获取最新交易日的板块数据
+    latest_date_subq = db.query(
+        func.max(IndustryDaily.trade_date)
+    ).scalar_subquery()
 
-        board_daily = session.query(IndustryDaily).filter(
-            IndustryDaily.industry == board_name,
-            IndustryDaily.trade_date == latest_date_subq
-        ).first()
+    board_daily = db.query(IndustryDaily).filter(
+        IndustryDaily.industry == board_name,
+        IndustryDaily.trade_date == latest_date_subq
+    ).first()
 
-        if not board_daily:
-            raise HTTPException(status_code=404, detail=f"板块 '{board_name}' 不存在")
+    if not board_daily:
+        raise HTTPException(status_code=404, detail=f"板块 '{board_name}' 不存在")
 
-        symbols = _load_board_symbols(session, board_name)
+    symbols = _load_board_symbols(db, board_name)
 
-        # 计算 PE 中位数
-        pe_values = [s.pe_ttm for s in symbols if s.pe_ttm is not None and s.pe_ttm > 0]
-        pe_median = None
-        if pe_values:
-            pe_values.sort()
-            n = len(pe_values)
-            if n % 2 == 0:
-                pe_median = (pe_values[n//2 - 1] + pe_values[n//2]) / 2
-            else:
-                pe_median = pe_values[n//2]
+    # 计算 PE 中位数
+    pe_values = [s.pe_ttm for s in symbols if s.pe_ttm is not None and s.pe_ttm > 0]
+    pe_median = None
+    if pe_values:
+        pe_values.sort()
+        n = len(pe_values)
+        if n % 2 == 0:
+            pe_median = (pe_values[n//2 - 1] + pe_values[n//2]) / 2
+        else:
+            pe_median = pe_values[n//2]
 
-        # 找到龙头公司（按市值）
-        leading_company = None
-        if symbols:
-            symbols_with_mv = [s for s in symbols if s.total_mv is not None]
-            if symbols_with_mv:
-                symbols_with_mv.sort(key=lambda x: x.total_mv, reverse=True)
-                leader = symbols_with_mv[0]
-                leading_company = {
-                    "ticker": leader.ticker,
-                    "name": leader.name,
-                    "market_cap": leader.total_mv
-                }
+    # 找到龙头公司（按市值）
+    leading_company = None
+    if symbols:
+        symbols_with_mv = [s for s in symbols if s.total_mv is not None]
+        if symbols_with_mv:
+            symbols_with_mv.sort(key=lambda x: x.total_mv, reverse=True)
+            leader = symbols_with_mv[0]
+            leading_company = {
+                "ticker": leader.ticker,
+                "name": leader.name,
+                "market_cap": leader.total_mv
+            }
 
-        # 计算市值增长
-        mv_growth = calculate_market_cap_growth(session, board_name)
+    # 计算市值增长
+    mv_growth = calculate_market_cap_growth(db, board_name)
 
-        # 构建响应
-        return {
-            "板块名称": board_name,
-            "板块代码": board_daily.ts_code,
-            "股票数量": board_daily.company_num,
-            "上涨家数": board_daily.up_count or 0,
-            "下跌家数": board_daily.down_count or 0,
-            "平仓家数": board_daily.company_num - (board_daily.up_count or 0) - (board_daily.down_count or 0),
-            "加权平均PE": board_daily.industry_pe,
-            "PE中位数": round(pe_median, 2) if pe_median else None,
-            "总市值": board_daily.total_mv,
-            "涨跌幅": board_daily.pct_change,
-            "龙头公司": leading_company,
-            "市值增长": {
-                "5天": round(mv_growth["5d"], 2) if mv_growth["5d"] is not None else None,
-                "2周": round(mv_growth["2w"], 2) if mv_growth["2w"] is not None else None,
-                "30天": round(mv_growth["30d"], 2) if mv_growth["30d"] is not None else None,
-                "3个月": round(mv_growth["3m"], 2) if mv_growth["3m"] is not None else None,
-                "6个月": round(mv_growth["6m"], 2) if mv_growth["6m"] is not None else None
-            },
-            "交易日期": board_daily.trade_date
-        }
+    # 构建响应
+    return {
+        "板块名称": board_name,
+        "板块代码": board_daily.ts_code,
+        "股票数量": board_daily.company_num,
+        "上涨家数": board_daily.up_count or 0,
+        "下跌家数": board_daily.down_count or 0,
+        "平仓家数": board_daily.company_num - (board_daily.up_count or 0) - (board_daily.down_count or 0),
+        "加权平均PE": board_daily.industry_pe,
+        "PE中位数": round(pe_median, 2) if pe_median else None,
+        "总市值": board_daily.total_mv,
+        "涨跌幅": board_daily.pct_change,
+        "龙头公司": leading_company,
+        "市值增长": {
+            "5天": round(mv_growth["5d"], 2) if mv_growth["5d"] is not None else None,
+            "2周": round(mv_growth["2w"], 2) if mv_growth["2w"] is not None else None,
+            "30天": round(mv_growth["30d"], 2) if mv_growth["30d"] is not None else None,
+            "3个月": round(mv_growth["3m"], 2) if mv_growth["3m"] is not None else None,
+            "6个月": round(mv_growth["6m"], 2) if mv_growth["6m"] is not None else None
+        },
+        "交易日期": board_daily.trade_date
+    }
 
 
 @router.get("/{board_name}/symbols", response_model=list[SymbolMeta])
-def list_board_symbols(board_name: str) -> list[SymbolMeta]:
+def list_board_symbols(board_name: str, db: Session = Depends(get_db)) -> list[SymbolMeta]:
     """获取板块成分股（优先使用映射表，其次 industry_lv1/2/3）"""
-    with session_scope() as session:
-        symbols = _load_board_symbols(session, board_name)
-        return [SymbolMeta.model_validate(s) for s in symbols]
+    symbols = _load_board_symbols(db, board_name)
+    return [SymbolMeta.model_validate(s) for s in symbols]
 
 
 

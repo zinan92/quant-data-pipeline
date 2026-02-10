@@ -5,15 +5,15 @@
 - 关键词过滤
 - 新消息追踪
 """
-import logging
 import hashlib
 from typing import List, Dict, Any, Optional, Set
 from datetime import datetime, timedelta
 from collections import deque
 
 from .news_service import NewsService, get_news_service
+from src.utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class NewsAggregator:

@@ -13,7 +13,6 @@ Key responsibilities:
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -22,8 +21,9 @@ from typing import Any, Dict, List, Optional
 from src.perception.aggregator import AggregationReport, AssetSignalSummary
 from src.perception.pipeline import ScanResult
 from src.perception.signals import Direction, Market, SignalType, UnifiedSignal
+from src.utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # ── Enums & Models ───────────────────────────────────────────────────

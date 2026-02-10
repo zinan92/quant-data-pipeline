@@ -3,13 +3,14 @@
 整合 CoinGecko 和 Binance 公共API，提供加密货币价格、K线、市场概览等数据
 """
 import asyncio
-import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 import httpx
 from urllib.parse import urlencode
 
-logger = logging.getLogger(__name__)
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class CryptoService:

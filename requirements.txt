@@ -10,3 +10,4 @@ sqlalchemy==2.0.29
 uvicorn==0.29.0
 mplfinance>=0.12.10b0
 feedparser>=6.0.0
+slowapi>=0.1.9

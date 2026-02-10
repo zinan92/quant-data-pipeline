@@ -253,7 +253,7 @@ class ServiceUnavailableError(AShareBaseException):
         )
 
 
-class TimeoutError(AShareBaseException):
+class OperationTimeoutError(AShareBaseException):
     """操作超时"""
 
     def __init__(self, operation: str, timeout: float):

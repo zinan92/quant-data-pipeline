@@ -15,7 +15,6 @@ to be computed.  Bars should be ordered oldest-first.
 
 from __future__ import annotations
 
-import logging
 from typing import Any, Dict, List, Optional
 
 from src.perception.detectors.base import Detector
@@ -26,8 +25,9 @@ from src.perception.signals import (
     SignalType,
     UnifiedSignal,
 )
+from src.utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ── Helpers ──────────────────────────────────────────────────────────
 

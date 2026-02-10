@@ -7,7 +7,6 @@
 - 强制依赖注入，不再自动创建 Session
 - Session 生命周期由调用者控制
 """
-import logging
 from datetime import datetime, time
 from typing import List, Dict, Any, Optional
 from sqlalchemy import desc
@@ -16,8 +15,9 @@ from sqlalchemy.orm import Session
 from src.models import Kline, KlineTimeframe, SymbolType
 from src.repositories.kline_repository import KlineRepository
 from src.services.kline_updater import KlineUpdater
+from src.utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class DataConsistencyValidator:

@@ -2,10 +2,15 @@
 新闻快讯 API 路由
 """
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Query, HTTPException
+from urllib.parse import urlparse
+import ipaddress
+
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
+from src.api.auth import verify_api_key
 from pydantic import BaseModel
 
 from src.services.news import get_news_service, get_news_aggregator, get_alerts_service, get_external_service, get_smart_alert_system
+from src.api.rate_limit import limiter
 
 router = APIRouter()
 
@@ -110,6 +115,7 @@ async def get_stock_news(
 async def set_keywords(
     include: Optional[List[str]] = None,
     exclude: Optional[List[str]] = None,
+    _: None = Depends(verify_api_key),
 ):
     """
     设置关键词过滤
@@ -135,7 +141,7 @@ async def get_news_stats():
 
 
 @router.post("/clear")
-async def clear_news_history():
+async def clear_news_history(_: None = Depends(verify_api_key)):
     """清空新闻历史（重新开始追踪新消息）"""
     aggregator = get_news_aggregator()
     aggregator.clear_history()
@@ -238,21 +244,47 @@ async def search_twitter(
     return {"query": q, "count": len(tweets), "tweets": tweets}
 
 
+ALLOWED_RSS_DOMAINS = [
+    "finance.sina.com.cn",
+    "rss.eastmoney.com",
+    "rsshub.app",
+]
+
+
+def validate_rss_url(url: str) -> str:
+    """校验 RSS URL，防止 SSRF 攻击。"""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(400, "Only HTTP(S) URLs allowed")
+    try:
+        ip = ipaddress.ip_address(parsed.hostname)
+        if ip.is_private or ip.is_loopback:
+            raise HTTPException(400, "Private/loopback URLs not allowed")
+    except ValueError:
+        pass  # hostname 是域名而非 IP — OK
+    if ALLOWED_RSS_DOMAINS and parsed.hostname not in ALLOWED_RSS_DOMAINS:
+        raise HTTPException(400, f"Domain not in allowlist: {parsed.hostname}")
+    return url
+
+
 @router.get("/rss")
+@limiter.limit("10/minute")
 async def get_rss_feed(
+    request: Request,
     url: str = Query(..., description="RSS feed URL"),
     name: str = Query("RSS Feed", description="Feed 名称"),
     limit: int = Query(10, ge=1, le=50),
 ):
     """
     获取 RSS feed
-    
+
     - **url**: RSS feed URL
     - **name**: Feed 名称（用于显示）
     """
+    validated_url = validate_rss_url(url)
     service = get_external_service()
-    items = service.fetch_rss_feed(url, name=name, limit=limit)
-    return {"name": name, "url": url, "count": len(items), "items": items}
+    items = service.fetch_rss_feed(validated_url, name=name, limit=limit)
+    return {"name": name, "url": validated_url, "count": len(items), "items": items}
 
 
 # ==================== 智能推送 ====================
@@ -272,7 +304,7 @@ async def get_recent_smart_alerts(limit: int = Query(20, ge=1, le=100)):
 
 
 @router.post("/smart-alerts/scan")
-async def scan_for_alerts():
+async def scan_for_alerts(_: None = Depends(verify_api_key)):
     """
     执行一次扫描，检查新闻和异动
     返回触发的告警
@@ -300,6 +332,7 @@ async def add_keyword_rule(
     name: str,
     keywords: List[str],
     priority: str = "normal",
+    _: None = Depends(verify_api_key),
 ):
     """添加关键词告警规则"""
     system = get_smart_alert_system()
@@ -312,6 +345,7 @@ async def add_stock_rule(
     name: str,
     stock_codes: List[str],
     priority: str = "high",
+    _: None = Depends(verify_api_key),
 ):
     """添加自选股告警规则"""
     system = get_smart_alert_system()

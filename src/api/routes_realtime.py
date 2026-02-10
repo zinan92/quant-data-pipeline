@@ -5,6 +5,12 @@ Real-time price proxy endpoint for Sina Finance API.
 import httpx
 from fastapi import APIRouter, HTTPException, Query
 
+from src.config import get_settings
+from src.exceptions import ServiceUnavailableError
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
 router = APIRouter()
 
 
@@ -50,6 +56,9 @@ async def get_realtime_prices(tickers: str = Query(..., description="Comma-separ
             response.raise_for_status()
             return {"data": response.text}
     except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=e.response.status_code, detail=f"Sina API error: {e}")
+        logger.exception("Sina API HTTP error")
+        detail = str(e) if get_settings().debug else "Internal server error"
+        raise HTTPException(status_code=e.response.status_code, detail=detail)
     except httpx.RequestError as e:
-        raise HTTPException(status_code=503, detail=f"Failed to connect to Sina API: {e}")
+        logger.exception("Failed to connect to Sina API")
+        raise ServiceUnavailableError(service="sina_realtime_prices", reason=str(e) if get_settings().debug else "Service unavailable")

@@ -4,7 +4,6 @@
 替代原来的东方财富(AKShare)数据源
 """
 
-import logging
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -12,8 +11,9 @@ import pandas as pd
 
 from src.config import get_settings
 from src.services.tushare_client import TushareClient
+from src.utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ── 热门概念关键词（用于从同花顺概念索引中筛选自选热门） ──
 # 映射: watchlist category -> 同花顺概念/行业名称列表

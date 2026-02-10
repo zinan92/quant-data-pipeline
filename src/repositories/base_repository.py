@@ -6,7 +6,7 @@ Base Repository - 通用Repository基类
 
 from typing import Generic, List, Optional, Type, TypeVar
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from src.database import Base
@@ -130,9 +130,8 @@ class BaseRepository(Generic[T]):
         Returns:
             记录数量
         """
-        stmt = select(self.model_class)
-        result = self.session.execute(stmt)
-        return len(list(result.scalars().all()))
+        stmt = select(func.count()).select_from(self.model_class)
+        return self.session.execute(stmt).scalar() or 0
 
     def exists(self, id_value: any) -> bool:
         """

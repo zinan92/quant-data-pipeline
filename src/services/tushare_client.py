@@ -3,7 +3,6 @@ Tushare Pro API Client
 提供对 Tushare Pro 数据接口的封装，包含智能限流和重试机制
 """
 
-import logging
 import time
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -11,7 +10,9 @@ from typing import List, Optional
 import pandas as pd
 import tushare as ts
 
-logger = logging.getLogger(__name__)
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class RateLimiter:

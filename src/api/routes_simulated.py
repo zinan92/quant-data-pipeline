@@ -5,7 +5,8 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from src.api.auth import verify_api_key
 from pydantic import BaseModel, Field
 
 from ..services.simulated_service import get_simulated_service
@@ -135,7 +136,7 @@ def get_positions():
 
 
 @router.post("/buy", response_model=TradeResponse)
-def buy_stock(request: BuyRequest):
+def buy_stock(request: BuyRequest, _: None = Depends(verify_api_key)):
     """模拟买入股票"""
     service = get_simulated_service()
     result = service.buy(
@@ -149,7 +150,7 @@ def buy_stock(request: BuyRequest):
 
 
 @router.post("/sell", response_model=TradeResponse)
-def sell_stock(request: SellRequest):
+def sell_stock(request: SellRequest, _: None = Depends(verify_api_key)):
     """模拟卖出股票"""
     service = get_simulated_service()
     result = service.sell(

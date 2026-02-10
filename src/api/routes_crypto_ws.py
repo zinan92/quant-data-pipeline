@@ -3,7 +3,8 @@ Crypto WebSocket 实时数据 API 路由
 提供低延迟的实时价格查询和WebSocket状态管理
 """
 from typing import List, Optional
-from fastapi import APIRouter, Query, HTTPException, Path
+from fastapi import APIRouter, Depends, Query, HTTPException, Path
+from src.api.auth import verify_api_key
 from pydantic import BaseModel
 
 from src.services.crypto_ws import get_crypto_ws_manager
@@ -137,7 +138,7 @@ async def get_ws_status():
 
 
 @router.post("/ws/restart")
-async def restart_ws():
+async def restart_ws(_: None = Depends(verify_api_key)):
     """重启WebSocket连接"""
     manager = get_crypto_ws_manager()
 

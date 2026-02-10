@@ -25,6 +25,10 @@ COPY README.md ./
 
 RUN mkdir -p data logs
 
+RUN useradd --create-home --shell /bin/bash appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 8000
 
 CMD ["uvicorn", "web.app:app", "--host", "0.0.0.0", "--port", "8000"]

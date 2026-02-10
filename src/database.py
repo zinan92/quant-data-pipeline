@@ -3,24 +3,27 @@ from typing import Generator
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from src.config import get_settings
 
 settings = get_settings()
 
-engine = create_engine(
-    settings.database_url,
-    connect_args={
-        "check_same_thread": False,
-        "timeout": 30,  # 增加锁等待超时时间到30秒
-    }
-    if settings.database_url.startswith("sqlite")
-    else {},
-    pool_size=20,  # 增加连接池大小
-    max_overflow=10,  # 允许额外10个连接
-    pool_pre_ping=True,  # 每次连接前检查连接有效性
-    future=True,
-)
+if settings.database_url.startswith("sqlite"):
+    engine = create_engine(
+        settings.database_url,
+        connect_args={"check_same_thread": False, "timeout": 30},
+        poolclass=StaticPool,
+        future=True,
+    )
+else:
+    engine = create_engine(
+        settings.database_url,
+        pool_size=20,
+        max_overflow=10,
+        pool_pre_ping=True,
+        future=True,
+    )
 
 SessionLocal = sessionmaker(
     bind=engine,

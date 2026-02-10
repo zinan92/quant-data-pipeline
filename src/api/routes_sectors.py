@@ -3,12 +3,15 @@
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from src.api.auth import verify_api_key
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from typing import Optional
 
 from src.api.dependencies import get_db
+from src.config import get_settings
+from src.exceptions import DatabaseError
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -190,7 +193,7 @@ async def get_sector_turnover(
         )
     except Exception as e:
         logger.exception("获取赛道成交额失败")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise DatabaseError(operation="get_sector_turnover", reason=str(e) if get_settings().debug else "Internal server error")
 
 
 class SectorUpdateRequest(BaseModel):
@@ -223,13 +226,14 @@ async def get_available_sectors(
         return SectorListResponse(sectors=sectors)
     except Exception as e:
         logger.exception("获取可用赛道列表失败")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise DatabaseError(operation="get_available_sectors", reason=str(e) if get_settings().debug else "Internal server error")
 
 
 @router.post("/list/available", response_model=SectorCreateResponse)
 async def create_sector(
     request: SectorCreateRequest,
     db: Session = Depends(get_db),
+    _: None = Depends(verify_api_key),
 ):
     """创建新的赛道分类"""
     try:
@@ -269,7 +273,7 @@ async def create_sector(
     except Exception as e:
         db.rollback()
         logger.exception("创建赛道失败")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise DatabaseError(operation="create_sector", reason=str(e) if get_settings().debug else "Internal server error")
 
 
 @router.put("/{ticker}", response_model=SectorResponse)
@@ -277,6 +281,7 @@ async def update_sector(
     ticker: str,
     request: SectorUpdateRequest,
     db: Session = Depends(get_db),
+    _: None = Depends(verify_api_key),
 ):
     """更新单个股票的赛道分类"""
     try:
@@ -307,7 +312,7 @@ async def update_sector(
     except Exception as e:
         db.rollback()
         logger.exception(f"更新赛道分类失败: {ticker}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise DatabaseError(operation="update_sector", reason=str(e) if get_settings().debug else "Internal server error")
 
 
 @router.get("/{ticker}", response_model=SectorResponse)
@@ -328,7 +333,7 @@ async def get_sector(
         )
     except Exception as e:
         logger.exception(f"获取赛道分类失败: {ticker}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise DatabaseError(operation="get_sector", reason=str(e) if get_settings().debug else "Internal server error")
 
 
 @router.post("/batch", response_model=SectorBatchResponse)
@@ -354,7 +359,7 @@ async def get_sectors_batch(
         return SectorBatchResponse(sectors=sectors)
     except Exception as e:
         logger.exception("批量获取赛道分类失败")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise DatabaseError(operation="get_sectors_batch", reason=str(e) if get_settings().debug else "Internal server error")
 
 
 @router.get("/", response_model=SectorBatchResponse)
@@ -371,4 +376,4 @@ async def get_all_sectors(
         return SectorBatchResponse(sectors=sectors)
     except Exception as e:
         logger.exception("获取所有赛道分类失败")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise DatabaseError(operation="get_all_sectors", reason=str(e) if get_settings().debug else "Internal server error")

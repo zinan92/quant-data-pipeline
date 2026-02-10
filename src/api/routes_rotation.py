@@ -1,9 +1,15 @@
 """
 板块轮动分析 API
 """
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 from typing import Dict, List, Optional
 from pydantic import BaseModel
+
+from src.config import get_settings
+from src.exceptions import DatabaseError
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/rotation", tags=["rotation"])
 
@@ -47,7 +53,8 @@ async def get_rotation_signals():
         result = get_rotation_analysis()
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("获取板块轮动信号失败")
+        raise DatabaseError(operation="get_rotation_signals", reason=str(e) if get_settings().debug else "Internal server error")
 
 
 @router.get("/top-inflow")
@@ -57,7 +64,8 @@ async def get_top_inflow(limit: int = Query(default=20, le=50)):
         from src.services.sector_rotation import get_top_inflow
         return get_top_inflow(limit)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("获取资金净流入TOP板块失败")
+        raise DatabaseError(operation="get_top_inflow", reason=str(e) if get_settings().debug else "Internal server error")
 
 
 @router.get("/heatmap")
@@ -82,4 +90,5 @@ async def get_rotation_heatmap():
             service.close()
             
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("获取轮动热力图数据失败")
+        raise DatabaseError(operation="get_rotation_heatmap", reason=str(e) if get_settings().debug else "Internal server error")

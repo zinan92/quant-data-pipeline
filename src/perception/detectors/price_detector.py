@@ -15,7 +15,6 @@ and optionally ``event.data["today"]`` for intraday context.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -27,8 +26,9 @@ from src.perception.signals import (
     SignalType,
     UnifiedSignal,
 )
+from src.utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # ── Configuration ────────────────────────────────────────────────────

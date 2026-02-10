@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
-from typing import Optional
+from typing import ClassVar, Optional
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, field_validator, model_validator
@@ -36,9 +36,71 @@ class NormalizedTicker(BaseModel):
     - 短码: 1 -> 000001
 
     输出: 统一的6位代码
+
+    A-share市场识别:
+    - Shanghai Main Board: 600xxx, 601xxx, 603xxx, 605xxx
+    - Shenzhen Main Board: 000xxx
+    - SME Board (Shenzhen): 002xxx
+    - ChiNext (Growth): 300xxx
+    - STAR Market (SSE): 688xxx, 689xxx
+    - Beijing Stock Exchange: 4xxxxx, 8xxxxx
     """
 
+    # Valid A-share ticker patterns (6 digits starting with specific prefixes)
+    VALID_PATTERNS: ClassVar[list[str]] = [
+        r"^60[0135]\d{3}$",  # Shanghai Main Board (600xxx, 601xxx, 603xxx, 605xxx)
+        r"^000\d{3}$",  # Shenzhen Main Board
+        r"^002\d{3}$",  # SME Board
+        r"^300\d{3}$",  # ChiNext
+        r"^68[89]\d{3}$",  # STAR Market
+        r"^[48]\d{5}$",  # Beijing Stock Exchange
+    ]
+
     raw: str  # 6位代码，内部统一格式
+
+    @classmethod
+    def is_valid_ashare(cls, ticker: str) -> bool:
+        """
+        检查ticker是否匹配A股合法模式。
+
+        Args:
+            ticker: 6位ticker代码
+
+        Returns:
+            True if ticker matches any known A-share pattern
+        """
+        if not ticker or len(ticker) != 6 or not ticker.isdigit():
+            return False
+        return any(re.match(p, ticker) for p in cls.VALID_PATTERNS)
+
+    def identify_market(self) -> str:
+        """
+        识别ticker所属市场/板块。
+
+        Returns:
+            市场名称 (e.g., "SSE", "SZSE", "ChiNext", "STAR", "BSE", "Unknown")
+        """
+        code = self.raw
+        if not code or len(code) != 6:
+            return "Unknown"
+
+        first_three = code[:3]
+        first_two = code[:2]
+
+        if first_three in ("600", "601", "603", "605"):
+            return "SSE"  # Shanghai Stock Exchange
+        elif first_three == "000":
+            return "SZSE"  # Shenzhen Stock Exchange (Main Board)
+        elif first_three == "002":
+            return "SME"  # Small and Medium Enterprise Board
+        elif first_three == "300":
+            return "ChiNext"  # Growth Enterprise Market
+        elif first_two == "68":
+            return "STAR"  # Science and Technology Innovation Board
+        elif code[0] in ("4", "8"):
+            return "BSE"  # Beijing Stock Exchange
+        else:
+            return "Unknown"
 
     @field_validator("raw", mode="before")
     @classmethod

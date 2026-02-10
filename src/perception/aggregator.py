@@ -23,7 +23,6 @@ Usage::
 
 from __future__ import annotations
 
-import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -35,8 +34,9 @@ from src.perception.signals import (
     SignalType,
     UnifiedSignal,
 )
+from src.utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # ── Configuration ────────────────────────────────────────────────────

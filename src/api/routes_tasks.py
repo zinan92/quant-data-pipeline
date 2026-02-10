@@ -3,7 +3,8 @@ import threading
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from src.api.auth import verify_api_key
 from pydantic import BaseModel
 
 from src.config import get_settings
@@ -18,6 +19,7 @@ class RefreshRequest(BaseModel):
 @router.post("/refresh", status_code=202)
 def trigger_refresh(
     payload: RefreshRequest,
+    _: None = Depends(verify_api_key),
 ) -> dict[str, str]:
     """
     Trigger a full data refresh (async):

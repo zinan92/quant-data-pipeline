@@ -5,7 +5,6 @@ Crypto WebSocket 实时数据流
 """
 import asyncio
 import json
-import logging
 import time
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any, Set, Callable
@@ -14,7 +13,9 @@ from dataclasses import dataclass, field
 import websockets
 from websockets.exceptions import ConnectionClosed, InvalidStatusCode
 
-logger = logging.getLogger(__name__)
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 # Binance WebSocket endpoints
 BINANCE_WS_BASE = "wss://stream.binance.com:9443"

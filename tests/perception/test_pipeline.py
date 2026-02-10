@@ -467,8 +467,22 @@ class TestAlertSource:
 class TestMarketDataSource:
     """Tests for MarketDataSource — index API + DB access."""
 
+    @pytest.fixture
+    def _patch_session(self, temp_db):
+        """Patch SessionLocal so MarketDataSource reads from the temp DB."""
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        engine = create_engine(
+            f"sqlite:///{temp_db}",
+            connect_args={"check_same_thread": False},
+        )
+        TestSession = sessionmaker(bind=engine)
+        with patch("src.database.SessionLocal", TestSession):
+            yield
+
     @pytest.mark.asyncio
-    async def test_poll_with_db(self, temp_db, sample_index_response):
+    async def test_poll_with_db(self, temp_db, _patch_session, sample_index_response):
         src = MarketDataSource(db_path=temp_db)
         await src.connect()
 
@@ -492,7 +506,7 @@ class TestMarketDataSource:
 
         await src.disconnect()
 
-    def test_get_watchlist(self, temp_db):
+    def test_get_watchlist(self, temp_db, _patch_session):
         src = MarketDataSource(db_path=temp_db)
         wl = src.get_watchlist()
         assert len(wl) == 2
@@ -500,7 +514,7 @@ class TestMarketDataSource:
         assert "600519" in tickers
         assert "000661" in tickers
 
-    def test_get_klines(self, temp_db):
+    def test_get_klines(self, temp_db, _patch_session):
         src = MarketDataSource(db_path=temp_db)
         bars = src.get_klines("600519")
         assert len(bars) == 30
@@ -508,15 +522,23 @@ class TestMarketDataSource:
         assert "close" in bars[0]
         assert "volume" in bars[0]
 
-    def test_get_klines_missing_symbol(self, temp_db):
+    def test_get_klines_missing_symbol(self, temp_db, _patch_session):
         src = MarketDataSource(db_path=temp_db)
         bars = src.get_klines("999999")
         assert bars == []
 
     def test_get_watchlist_missing_db(self):
-        src = MarketDataSource(db_path="/nonexistent/path.db")
-        wl = src.get_watchlist()
-        assert wl == []
+        """When SessionLocal fails, get_watchlist raises OperationalError."""
+        from sqlalchemy import create_engine
+        from sqlalchemy.exc import OperationalError
+        from sqlalchemy.orm import sessionmaker
+
+        engine = create_engine("sqlite:///nonexistent_dir/missing.db")
+        FailSession = sessionmaker(bind=engine)
+        with patch("src.database.SessionLocal", FailSession):
+            src = MarketDataSource(db_path="/nonexistent/path.db")
+            with pytest.raises(OperationalError):
+                src.get_watchlist()
 
     def test_name_and_type(self):
         src = MarketDataSource()

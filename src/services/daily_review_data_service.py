@@ -6,10 +6,14 @@ Orchestrates data collection from multiple sources and applies labeling algorith
 """
 
 import asyncio
+import json
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 from src.models.kline import Kline
 from src.models.board import IndustryDaily, ConceptDaily, BoardMapping
@@ -574,10 +578,10 @@ class DailyReviewDataService:
             if isinstance(board.constituents, list):
                 return board.constituents
             # If it's stored as string, parse it
-            import json
             try:
                 return json.loads(board.constituents)
-            except:
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.warning(f"Failed to parse board constituents: {e}")
                 return []
 
         return []
@@ -845,6 +849,5 @@ class DailyReviewDataService:
 
         except Exception as e:
             # Log error but don't fail the entire snapshot
-            import logging
-            logging.getLogger(__name__).warning(f"Fundamental analysis failed: {e}")
+            logger.warning(f"Fundamental analysis failed: {e}")
             return None

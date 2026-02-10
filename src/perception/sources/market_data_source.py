@@ -11,8 +11,7 @@ by constructing RawMarketEvents with ``data["bars"]`` payloads.
 
 from __future__ import annotations
 
-import logging
-import sqlite3
+from sqlalchemy import text
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,8 +27,9 @@ from src.perception.events import (
 )
 from src.perception.health import HealthStatus, SourceHealth
 from src.perception.sources.base import DataSource, SourceType
+from src.utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 DEFAULT_INDEX_CODES = [
     "000001.SH",
@@ -38,7 +38,11 @@ DEFAULT_INDEX_CODES = [
     "000688.SH",
 ]
 
-DEFAULT_DB_PATH = "data/market.db"
+def _get_default_db_path() -> str:
+    from src.config import get_settings
+    return str(get_settings().data_dir / "market.db")
+
+DEFAULT_DB_PATH = None  # Resolved lazily
 
 # How many recent kline bars to load per symbol for detector analysis
 KLINE_BAR_LIMIT = 260  # ~1 year of daily
@@ -64,13 +68,13 @@ class MarketDataSource(DataSource):
     def __init__(
         self,
         base_url: str = "http://127.0.0.1:8000",
-        db_path: str = DEFAULT_DB_PATH,
+        db_path: Optional[str] = None,
         index_codes: Optional[List[str]] = None,
         kline_timeframe: str = "daily",
         timeout: float = 10.0,
     ) -> None:
         self._base_url = base_url.rstrip("/")
-        self._db_path = db_path
+        self._db_path = db_path or _get_default_db_path()
         self._index_codes = index_codes or list(DEFAULT_INDEX_CODES)
         self._kline_timeframe = kline_timeframe
         self._timeout = timeout
@@ -215,43 +219,36 @@ class MarketDataSource(DataSource):
 
     def get_watchlist(self) -> List[Dict[str, Any]]:
         """Read the watchlist table from SQLite."""
-        db = Path(self._db_path)
-        if not db.exists():
-            logger.warning("DB not found: %s", self._db_path)
-            return []
+        from src.database import SessionLocal
 
-        conn = sqlite3.connect(str(db))
-        conn.row_factory = sqlite3.Row
+        session = SessionLocal()
         try:
-            rows = conn.execute(
-                "SELECT ticker, category, is_focus FROM watchlist ORDER BY is_focus DESC"
-            ).fetchall()
+            rows = session.execute(
+                text("SELECT ticker, category, is_focus FROM watchlist ORDER BY is_focus DESC")
+            ).mappings().fetchall()
             return [dict(r) for r in rows]
         finally:
-            conn.close()
+            session.close()
 
     def get_klines(self, symbol_code: str, limit: int = KLINE_BAR_LIMIT) -> List[Dict[str, Any]]:
         """Load recent kline bars for a symbol from SQLite."""
-        db = Path(self._db_path)
-        if not db.exists():
-            return []
+        from src.database import SessionLocal
 
-        conn = sqlite3.connect(str(db))
-        conn.row_factory = sqlite3.Row
+        session = SessionLocal()
         try:
-            rows = conn.execute(
-                """
+            rows = session.execute(
+                text("""
                 SELECT trade_time, open, high, low, close, volume, amount
                 FROM klines
-                WHERE symbol_code = ? AND timeframe = ?
+                WHERE symbol_code = :symbol_code AND timeframe = :timeframe
                 ORDER BY trade_time ASC
-                LIMIT ?
-                """,
-                (symbol_code, self._kline_timeframe, limit),
-            ).fetchall()
+                LIMIT :limit
+                """),
+                {"symbol_code": symbol_code, "timeframe": self._kline_timeframe, "limit": limit},
+            ).mappings().fetchall()
             return [dict(r) for r in rows]
         finally:
-            conn.close()
+            session.close()
 
     def _load_watchlist_klines(self) -> List[RawMarketEvent]:
         """Build KLINE events for each watchlist ticker using DB data."""

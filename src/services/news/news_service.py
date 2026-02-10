@@ -2,13 +2,14 @@
 新闻快讯服务
 获取财联社、同花顺等实时快讯
 """
-import logging
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import akshare as ak
 import pandas as pd
 
-logger = logging.getLogger(__name__)
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class NewsService:

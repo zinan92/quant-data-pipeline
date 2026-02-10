@@ -10,7 +10,6 @@ Higher-level source that combines fetch + detection.
 
 from __future__ import annotations
 
-import logging
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -28,8 +27,9 @@ from src.perception.events import (
 from src.perception.health import HealthStatus, SourceHealth
 from src.perception.signals import UnifiedSignal
 from src.perception.sources.base import DataSource, SourceType
+from src.utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AlertSource(DataSource):

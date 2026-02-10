@@ -9,16 +9,19 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends
+from src.api.auth import verify_api_key
+from src.config import get_settings
+from src.exceptions import DatabaseError
 
 from src.perception.pipeline import PerceptionPipeline, PipelineConfig
 from src.perception.integration.trading_bridge import TradingBridge, BridgeConfig
 from src.perception.integration.market_context import MarketContextBuilder, ContextConfig
+from src.utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -71,7 +74,7 @@ def set_context_builder(builder: MarketContextBuilder) -> None:
 
 
 @router.post("/scan")
-async def trigger_scan() -> Dict[str, Any]:
+async def trigger_scan(_: None = Depends(verify_api_key)) -> Dict[str, Any]:
     """Trigger a perception scan cycle.
 
     Returns the full scan result including aggregation report,
@@ -90,7 +93,7 @@ async def trigger_scan() -> Dict[str, Any]:
         }
     except Exception as exc:
         logger.exception("Scan failed")
-        raise HTTPException(status_code=500, detail=f"Scan failed: {exc}")
+        raise DatabaseError(operation="trigger_scan", reason=str(exc) if get_settings().debug else "Internal server error")
 
 
 @router.get("/signals")
@@ -126,6 +129,7 @@ async def get_health() -> Dict[str, Any]:
 async def get_trading_signals(
     min_confidence: float = 0.4,
     limit: int = 50,
+    _: None = Depends(verify_api_key),
 ) -> Dict[str, Any]:
     """Trigger a scan and return trading-ready signals.
 
@@ -160,9 +164,7 @@ async def get_trading_signals(
         }
     except Exception as exc:
         logger.exception("Trading signals endpoint failed")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to generate trading signals: {exc}"
-        )
+        raise DatabaseError(operation="get_trading_signals", reason=str(exc) if get_settings().debug else "Internal server error")
 
 
 @router.get("/market-context")
@@ -184,10 +186,7 @@ async def get_market_context() -> Dict[str, Any]:
             last_result = await pipeline.scan()
         except Exception as exc:
             logger.exception("Market context scan failed")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to build market context: {exc}",
-            )
+            raise DatabaseError(operation="get_market_context", reason=str(exc) if get_settings().debug else "Internal server error")
 
     ctx = builder.build(last_result)
     return {

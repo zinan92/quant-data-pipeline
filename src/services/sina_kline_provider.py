@@ -3,13 +3,14 @@
 用于获取分钟级K线数据
 """
 import time
-import logging
 import requests
 from typing import List, Optional
 from datetime import datetime
 import pandas as pd
 
-LOGGER = logging.getLogger(__name__)
+from src.utils.logging import get_logger
+
+LOGGER = get_logger(__name__)
 
 # Rate-limit status codes that trigger backoff
 RATE_LIMIT_CODES = {429, 456}

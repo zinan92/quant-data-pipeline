@@ -11,7 +11,6 @@ Replaces:
 from __future__ import annotations
 
 import csv
-import logging
 import random
 import time
 from collections import defaultdict
@@ -28,10 +27,10 @@ from src.models import BoardMapping, SymbolMetadata
 from src.repositories.board_mapping_repository import BoardMappingRepository
 from src.repositories.symbol_repository import SymbolRepository
 from src.services.tushare_client import TushareClient
-from src.utils.logging import LOGGER
+from src.utils.logging import LOGGER, get_logger
 from src.utils.ticker_utils import TickerNormalizer
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class BoardService:

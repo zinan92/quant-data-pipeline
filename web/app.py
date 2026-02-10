@@ -1,10 +1,12 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from src.api.router import api_router
 from src.config import Settings, get_settings
-from src.lifecycle import register_startup_shutdown
+from src.lifecycle import lifespan
 from src.exceptions import (
     AShareBaseException,
     DataNotFoundError,
@@ -19,6 +21,8 @@ from src.exceptions import (
 )
 from src.utils.logging import get_logger
 
+from src.api.rate_limit import limiter
+
 settings = get_settings()
 logger = get_logger(__name__)
 
@@ -29,14 +33,19 @@ def create_app() -> FastAPI:
         title="A-Share Monitor API",
         version="0.1.0",
         description="Batch K-line data service for A-share monitoring dashboard.",
+        lifespan=lifespan,
     )
+
+    # Rate limiting
+    application.state.limiter = limiter
+    application.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
     application.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_allow_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+        allow_headers=["Content-Type", "Authorization", "X-API-Key"],
     )
 
     # Register exception handlers
@@ -44,7 +53,6 @@ def create_app() -> FastAPI:
 
     application.include_router(api_router, prefix="/api")
 
-    register_startup_shutdown(application)
     return application
 
 

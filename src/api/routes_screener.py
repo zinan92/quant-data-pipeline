@@ -5,6 +5,12 @@ from fastapi import APIRouter, HTTPException
 from typing import Dict, List
 from pydantic import BaseModel
 
+from src.config import get_settings
+from src.exceptions import DatabaseError
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
 router = APIRouter(prefix="/screener", tags=["screener"])
 
 
@@ -68,7 +74,8 @@ async def get_screener_signals():
         )
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("获取选股信号失败")
+        raise DatabaseError(operation="get_screener_signals", reason=str(e) if get_settings().debug else "Internal server error")
 
 
 @router.get("/ticker/{ticker}")
@@ -87,4 +94,5 @@ async def get_ticker_indicators(ticker: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("获取股票技术指标失败")
+        raise DatabaseError(operation="get_ticker_indicators", reason=str(e) if get_settings().debug else "Internal server error")

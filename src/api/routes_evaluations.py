@@ -9,11 +9,13 @@ from datetime import datetime, date
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from src.api.auth import verify_api_key
+from src.api.dependencies import get_db
 from pydantic import BaseModel, Field
 from sqlalchemy import select, desc
+from sqlalchemy.orm import Session
 
-from ..database import session_scope
 from ..models import KlineEvaluation
 
 router = APIRouter()
@@ -139,7 +141,7 @@ class EvaluationListResponse(BaseModel):
 
 
 @router.post("", response_model=EvaluationResponse)
-def create_evaluation(data: EvaluationCreate):
+def create_evaluation(data: EvaluationCreate, db: Session = Depends(get_db), _: None = Depends(verify_api_key)):
     """创建新的K线评估标注"""
 
     # 自动提取标签
@@ -168,43 +170,42 @@ def create_evaluation(data: EvaluationCreate):
 
     eval_date = date.today().isoformat()
 
-    with session_scope() as session:
-        evaluation = KlineEvaluation(
-            ticker=data.ticker,
-            stock_name=data.stock_name,
-            timeframe=data.timeframe,
-            eval_date=eval_date,
-            kline_end_date=data.kline_end_date,
-            description=data.description,
-            score=data.score,
-            tags=tags,
-            screenshot_path=screenshot_path,
-            kline_data=data.kline_data,
-            price_at_eval=data.price_at_eval,
-            verified=False,
-        )
-        session.add(evaluation)
-        session.flush()
+    evaluation = KlineEvaluation(
+        ticker=data.ticker,
+        stock_name=data.stock_name,
+        timeframe=data.timeframe,
+        eval_date=eval_date,
+        kline_end_date=data.kline_end_date,
+        description=data.description,
+        score=data.score,
+        tags=tags,
+        screenshot_path=screenshot_path,
+        kline_data=data.kline_data,
+        price_at_eval=data.price_at_eval,
+        verified=False,
+    )
+    db.add(evaluation)
+    db.flush()
 
-        return EvaluationResponse(
-            id=evaluation.id,
-            ticker=evaluation.ticker,
-            stock_name=evaluation.stock_name,
-            timeframe=evaluation.timeframe,
-            eval_date=evaluation.eval_date,
-            kline_end_date=evaluation.kline_end_date,
-            description=evaluation.description,
-            score=evaluation.score,
-            tags=evaluation.tags,
-            screenshot_path=evaluation.screenshot_path,
-            price_at_eval=evaluation.price_at_eval,
-            price_1d=evaluation.price_1d,
-            price_5d=evaluation.price_5d,
-            return_1d=evaluation.return_1d,
-            return_5d=evaluation.return_5d,
-            verified=evaluation.verified,
-            created_at=evaluation.created_at.isoformat() if evaluation.created_at else "",
-        )
+    return EvaluationResponse(
+        id=evaluation.id,
+        ticker=evaluation.ticker,
+        stock_name=evaluation.stock_name,
+        timeframe=evaluation.timeframe,
+        eval_date=evaluation.eval_date,
+        kline_end_date=evaluation.kline_end_date,
+        description=evaluation.description,
+        score=evaluation.score,
+        tags=evaluation.tags,
+        screenshot_path=evaluation.screenshot_path,
+        price_at_eval=evaluation.price_at_eval,
+        price_1d=evaluation.price_1d,
+        price_5d=evaluation.price_5d,
+        return_1d=evaluation.return_1d,
+        return_5d=evaluation.return_5d,
+        verified=evaluation.verified,
+        created_at=evaluation.created_at.isoformat() if evaluation.created_at else "",
+    )
 
 
 @router.get("", response_model=EvaluationListResponse)
@@ -214,58 +215,58 @@ def list_evaluations(
     tag: Optional[str] = Query(None, description="按标签筛选"),
     limit: int = Query(50, ge=1, le=500, description="返回数量"),
     offset: int = Query(0, ge=0, description="偏移量"),
+    db: Session = Depends(get_db),
 ):
     """获取评估列表"""
-    with session_scope() as session:
-        query = select(KlineEvaluation).order_by(desc(KlineEvaluation.created_at))
+    query = select(KlineEvaluation).order_by(desc(KlineEvaluation.created_at))
 
-        if ticker:
-            query = query.where(KlineEvaluation.ticker == ticker)
-        if min_score is not None:
-            query = query.where(KlineEvaluation.score >= min_score)
+    if ticker:
+        query = query.where(KlineEvaluation.ticker == ticker)
+    if min_score is not None:
+        query = query.where(KlineEvaluation.score >= min_score)
 
-        # 获取总数
-        count_query = select(KlineEvaluation)
-        if ticker:
-            count_query = count_query.where(KlineEvaluation.ticker == ticker)
-        if min_score is not None:
-            count_query = count_query.where(KlineEvaluation.score >= min_score)
-        total = len(session.execute(count_query).scalars().all())
+    # 获取总数
+    count_query = select(KlineEvaluation)
+    if ticker:
+        count_query = count_query.where(KlineEvaluation.ticker == ticker)
+    if min_score is not None:
+        count_query = count_query.where(KlineEvaluation.score >= min_score)
+    total = len(db.execute(count_query).scalars().all())
 
-        # 分页
-        query = query.offset(offset).limit(limit)
-        evaluations = session.execute(query).scalars().all()
+    # 分页
+    query = query.offset(offset).limit(limit)
+    evaluations = db.execute(query).scalars().all()
 
-        # 按标签筛选（JSON字段需要在Python中处理）
-        if tag:
-            evaluations = [e for e in evaluations if e.tags and tag in e.tags]
-            total = len(evaluations)
+    # 按标签筛选（JSON字段需要在Python中处理）
+    if tag:
+        evaluations = [e for e in evaluations if e.tags and tag in e.tags]
+        total = len(evaluations)
 
-        return EvaluationListResponse(
-            evaluations=[
-                EvaluationResponse(
-                    id=e.id,
-                    ticker=e.ticker,
-                    stock_name=e.stock_name,
-                    timeframe=e.timeframe,
-                    eval_date=e.eval_date,
-                    kline_end_date=e.kline_end_date,
-                    description=e.description,
-                    score=e.score,
-                    tags=e.tags,
-                    screenshot_path=e.screenshot_path,
-                    price_at_eval=e.price_at_eval,
-                    price_1d=e.price_1d,
-                    price_5d=e.price_5d,
-                    return_1d=e.return_1d,
-                    return_5d=e.return_5d,
-                    verified=e.verified,
-                    created_at=e.created_at.isoformat() if e.created_at else "",
-                )
-                for e in evaluations
-            ],
-            total=total,
-        )
+    return EvaluationListResponse(
+        evaluations=[
+            EvaluationResponse(
+                id=e.id,
+                ticker=e.ticker,
+                stock_name=e.stock_name,
+                timeframe=e.timeframe,
+                eval_date=e.eval_date,
+                kline_end_date=e.kline_end_date,
+                description=e.description,
+                score=e.score,
+                tags=e.tags,
+                screenshot_path=e.screenshot_path,
+                price_at_eval=e.price_at_eval,
+                price_1d=e.price_1d,
+                price_5d=e.price_5d,
+                return_1d=e.return_1d,
+                return_5d=e.return_5d,
+                verified=e.verified,
+                created_at=e.created_at.isoformat() if e.created_at else "",
+            )
+            for e in evaluations
+        ],
+        total=total,
+    )
 
 
 @router.get("/tags")
@@ -275,83 +276,80 @@ def list_available_tags():
 
 
 @router.get("/stats")
-def get_evaluation_stats():
+def get_evaluation_stats(db: Session = Depends(get_db)):
     """获取评估统计信息"""
-    with session_scope() as session:
-        evaluations = session.execute(select(KlineEvaluation)).scalars().all()
+    evaluations = db.execute(select(KlineEvaluation)).scalars().all()
 
-        total = len(evaluations)
-        score_distribution = {}
-        for e in evaluations:
-            score_distribution[e.score] = score_distribution.get(e.score, 0) + 1
+    total = len(evaluations)
+    score_distribution = {}
+    for e in evaluations:
+        score_distribution[e.score] = score_distribution.get(e.score, 0) + 1
 
-        actionable = len([e for e in evaluations if e.score >= 8])
-        verified = len([e for e in evaluations if e.verified])
+    actionable = len([e for e in evaluations if e.score >= 8])
+    verified = len([e for e in evaluations if e.verified])
 
-        # 计算8分以上的平均收益
-        verified_high_score = [e for e in evaluations if e.score >= 8 and e.verified]
-        avg_return_1d = None
-        avg_return_5d = None
-        if verified_high_score:
-            returns_1d = [e.return_1d for e in verified_high_score if e.return_1d is not None]
-            returns_5d = [e.return_5d for e in verified_high_score if e.return_5d is not None]
-            if returns_1d:
-                avg_return_1d = sum(returns_1d) / len(returns_1d)
-            if returns_5d:
-                avg_return_5d = sum(returns_5d) / len(returns_5d)
+    # 计算8分以上的平均收益
+    verified_high_score = [e for e in evaluations if e.score >= 8 and e.verified]
+    avg_return_1d = None
+    avg_return_5d = None
+    if verified_high_score:
+        returns_1d = [e.return_1d for e in verified_high_score if e.return_1d is not None]
+        returns_5d = [e.return_5d for e in verified_high_score if e.return_5d is not None]
+        if returns_1d:
+            avg_return_1d = sum(returns_1d) / len(returns_1d)
+        if returns_5d:
+            avg_return_5d = sum(returns_5d) / len(returns_5d)
 
-        return {
-            "total": total,
-            "actionable": actionable,  # 8分以上
-            "verified": verified,
-            "score_distribution": score_distribution,
-            "avg_return_1d": avg_return_1d,
-            "avg_return_5d": avg_return_5d,
-        }
+    return {
+        "total": total,
+        "actionable": actionable,  # 8分以上
+        "verified": verified,
+        "score_distribution": score_distribution,
+        "avg_return_1d": avg_return_1d,
+        "avg_return_5d": avg_return_5d,
+    }
 
 
 @router.get("/{evaluation_id}", response_model=EvaluationResponse)
-def get_evaluation(evaluation_id: int):
+def get_evaluation(evaluation_id: int, db: Session = Depends(get_db)):
     """获取单个评估详情"""
-    with session_scope() as session:
-        evaluation = session.get(KlineEvaluation, evaluation_id)
-        if not evaluation:
-            raise HTTPException(status_code=404, detail="Evaluation not found")
+    evaluation = db.get(KlineEvaluation, evaluation_id)
+    if not evaluation:
+        raise HTTPException(status_code=404, detail="Evaluation not found")
 
-        return EvaluationResponse(
-            id=evaluation.id,
-            ticker=evaluation.ticker,
-            stock_name=evaluation.stock_name,
-            timeframe=evaluation.timeframe,
-            eval_date=evaluation.eval_date,
-            kline_end_date=evaluation.kline_end_date,
-            description=evaluation.description,
-            score=evaluation.score,
-            tags=evaluation.tags,
-            screenshot_path=evaluation.screenshot_path,
-            price_at_eval=evaluation.price_at_eval,
-            price_1d=evaluation.price_1d,
-            price_5d=evaluation.price_5d,
-            return_1d=evaluation.return_1d,
-            return_5d=evaluation.return_5d,
-            verified=evaluation.verified,
-            created_at=evaluation.created_at.isoformat() if evaluation.created_at else "",
-        )
+    return EvaluationResponse(
+        id=evaluation.id,
+        ticker=evaluation.ticker,
+        stock_name=evaluation.stock_name,
+        timeframe=evaluation.timeframe,
+        eval_date=evaluation.eval_date,
+        kline_end_date=evaluation.kline_end_date,
+        description=evaluation.description,
+        score=evaluation.score,
+        tags=evaluation.tags,
+        screenshot_path=evaluation.screenshot_path,
+        price_at_eval=evaluation.price_at_eval,
+        price_1d=evaluation.price_1d,
+        price_5d=evaluation.price_5d,
+        return_1d=evaluation.return_1d,
+        return_5d=evaluation.return_5d,
+        verified=evaluation.verified,
+        created_at=evaluation.created_at.isoformat() if evaluation.created_at else "",
+    )
 
 
 @router.delete("/{evaluation_id}")
-def delete_evaluation(evaluation_id: int):
+def delete_evaluation(evaluation_id: int, db: Session = Depends(get_db), _: None = Depends(verify_api_key)):
     """删除评估"""
-    with session_scope() as session:
-        evaluation = session.get(KlineEvaluation, evaluation_id)
-        if not evaluation:
-            raise HTTPException(status_code=404, detail="Evaluation not found")
+    evaluation = db.get(KlineEvaluation, evaluation_id)
+    if not evaluation:
+        raise HTTPException(status_code=404, detail="Evaluation not found")
 
-        # 删除截图文件
-        if evaluation.screenshot_path:
-            filepath = Path(__file__).parent.parent.parent / "data" / evaluation.screenshot_path
-            if filepath.exists():
-                filepath.unlink()
+    # 删除截图文件
+    if evaluation.screenshot_path:
+        filepath = Path(__file__).parent.parent.parent / "data" / evaluation.screenshot_path
+        if filepath.exists():
+            filepath.unlink()
 
-        session.delete(evaluation)
-        return {"message": "Evaluation deleted"}
+    db.delete(evaluation)
+    return {"message": "Evaluation deleted"}

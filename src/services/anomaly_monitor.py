@@ -7,7 +7,10 @@ from datetime import datetime
 import json
 from sqlalchemy import text
 from src.database import SessionLocal
+from src.utils.logging import get_logger
 import tushare as ts
+
+LOGGER = get_logger(__name__)
 from src.config import get_settings
 
 
@@ -179,8 +182,8 @@ class AnomalyMonitor:
                 'details': json.dumps(anomaly)
             })
             self.session.commit()
-        except:
-            pass
+        except Exception as e:
+            LOGGER.warning(f"Failed to save anomaly for {anomaly.get('ticker')}: {e}")
     
     def get_today_anomalies(self) -> List[Dict]:
         """获取今日异动"""

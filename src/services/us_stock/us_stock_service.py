@@ -2,14 +2,14 @@
 美股服务
 整合 Yahoo Finance 数据，提供美股行情、K线、板块、商品、债券监控
 """
-import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import pandas as pd
 
 from src.services.yahoo_finance_provider import YahooFinanceProvider
+from src.utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class USStockService:

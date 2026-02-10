@@ -8,6 +8,9 @@ import json
 from datetime import datetime
 from sqlalchemy import text
 from src.database import SessionLocal
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 # 情绪词典
@@ -127,8 +130,8 @@ class NewsSentimentAnalyzer:
             if resp.ok:
                 data = resp.json()
                 return data if isinstance(data, list) else data.get('news', [])
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to fetch recent news: {e}")
         return []
     
     def analyze_recent_news(self, limit: int = 50) -> Dict:

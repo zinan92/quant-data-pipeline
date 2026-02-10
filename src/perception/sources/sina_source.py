@@ -15,7 +15,6 @@ Includes:
 from __future__ import annotations
 
 import asyncio
-import logging
 import random
 import re
 import time
@@ -34,8 +33,9 @@ from src.perception.events import (
 )
 from src.perception.health import HealthStatus, SourceHealth
 from src.perception.sources.base import DataSource, SourceType
+from src.utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # ── Circuit Breaker ──────────────────────────────────────────────────

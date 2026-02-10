@@ -2,12 +2,13 @@
 美股新闻 RSS 服务
 从多个财经 RSS 源获取最新快讯
 """
-import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import time
 
-logger = logging.getLogger(__name__)
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 # RSS 源列表
 RSS_FEEDS = [

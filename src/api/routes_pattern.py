@@ -1,9 +1,15 @@
 """
 K线形态匹配 API
 """
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 from typing import Dict, List, Optional
 from pydantic import BaseModel
+
+from src.config import get_settings
+from src.exceptions import DatabaseError
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/pattern", tags=["pattern"])
 
@@ -54,7 +60,8 @@ async def analyze_pattern(
         result = analyze_stock_pattern(ticker, pattern_days)
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("分析股票K线形态失败")
+        raise DatabaseError(operation="analyze_pattern", reason=str(e) if get_settings().debug else "Internal server error")
 
 
 @router.get("/batch-analyze")
@@ -75,7 +82,8 @@ async def batch_analyze_patterns(
             try:
                 result = analyze_stock_pattern(ticker, pattern_days)
                 results.append(result)
-            except:
+            except Exception as e:
+                logger.warning(f"Pattern analysis failed for {ticker}: {e}")
                 continue
         
         return {
@@ -84,4 +92,5 @@ async def batch_analyze_patterns(
         }
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("批量分析K线形态失败")
+        raise DatabaseError(operation="batch_analyze_patterns", reason=str(e) if get_settings().debug else "Internal server error")

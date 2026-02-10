@@ -2,7 +2,6 @@
 智能推送系统
 监控新闻和异动，根据规则触发推送
 """
-import logging
 import re
 from typing import List, Dict, Any, Optional, Callable, Set
 from datetime import datetime, timedelta
@@ -11,8 +10,9 @@ from dataclasses import dataclass, field
 from .news_service import get_news_service
 from .news_aggregator import get_news_aggregator
 from .alerts_service import get_alerts_service
+from src.utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass

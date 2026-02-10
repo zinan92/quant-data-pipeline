@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from src.api.dependencies import get_db
 from src.config import get_settings
+from src.exceptions import DatabaseError, ServiceUnavailableError
 from src.models import KlineTimeframe, SymbolType
 from src.services.kline_service import KlineService
 from src.services.tushare_client import TushareClient
@@ -119,7 +120,7 @@ def get_index_kline(
         raise
     except Exception as e:
         logger.exception(f"获取指数K线失败: {ts_code}")
-        raise HTTPException(status_code=500, detail=f"获取指数数据失败: {str(e)}")
+        raise DatabaseError(operation="get_index_kline", reason=str(e) if get_settings().debug else "Internal server error")
 
 
 @router.get("/quote/{ts_code}")
@@ -204,7 +205,7 @@ def get_index_quote(ts_code: str = "000001.SH") -> Dict[str, Any]:
         raise
     except Exception as e:
         logger.exception(f"获取指数行情失败: {ts_code}")
-        raise HTTPException(status_code=500, detail=f"获取指数行情失败: {str(e)}")
+        raise DatabaseError(operation="get_index_quote", reason=str(e) if get_settings().debug else "Internal server error")
 
 
 def get_market_stats(client: TushareClient, trade_date: str) -> Dict[str, int]:
@@ -355,10 +356,11 @@ async def get_index_realtime(ts_code: str = "000001.SH"):
             }
 
     except httpx.RequestError as e:
-        raise HTTPException(status_code=503, detail=f"请求失败: {e}")
+        logger.exception(f"指数实时行情请求失败: {ts_code}")
+        raise ServiceUnavailableError(service="sina_index_realtime", reason=str(e) if get_settings().debug else "Service unavailable")
     except Exception as e:
         logger.exception(f"获取指数实时行情失败: {ts_code}")
-        raise HTTPException(status_code=500, detail=f"获取实时数据失败: {e}")
+        raise DatabaseError(operation="get_index_realtime", reason=str(e) if get_settings().debug else "Internal server error")
 
 
 @router.get("/kline30m/{ts_code}")
@@ -425,4 +427,4 @@ def get_index_kline_30m(
         raise
     except Exception as e:
         logger.exception(f"获取指数30分钟K线失败: {ts_code}")
-        raise HTTPException(status_code=500, detail=f"获取K线数据失败: {e}")
+        raise DatabaseError(operation="get_index_kline_30m", reason=str(e) if get_settings().debug else "Internal server error")

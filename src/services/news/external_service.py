@@ -2,13 +2,14 @@
 外部信息流服务
 整合 Twitter 和 RSS feeds
 """
-import logging
 import subprocess
 import json
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
-logger = logging.getLogger(__name__)
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class ExternalInfoService:

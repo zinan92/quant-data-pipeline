@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     )
 
     database_url: str = Field(default="sqlite:///data/market.db", alias="DATABASE_URL")
+    api_key: str = Field(default="", alias="API_KEY")
+    debug: bool = Field(default=False, alias="DEBUG")
     data_dir: Path = Field(default=Path("data"), alias="DATA_DIR")
     logs_dir: Path = Field(default=Path("logs"), alias="LOGS_DIR")
 

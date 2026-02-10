@@ -13,7 +13,6 @@ a cron scheduler, or an API endpoint.
 from __future__ import annotations
 
 import asyncio
-import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -38,8 +37,9 @@ from src.perception.sources.alert_source import AlertSource
 from src.perception.sources.base import DataSource
 from src.perception.sources.market_data_source import MarketDataSource
 from src.perception.sources.news_source import NewsSource
+from src.utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # ── Configuration ────────────────────────────────────────────────────
@@ -49,11 +49,16 @@ logger = logging.getLogger(__name__)
 class PipelineConfig:
     """Pipeline-level configuration."""
 
-    # ashare API base URL
-    api_base_url: str = "http://127.0.0.1:8000"
+    api_base_url: str = ""
+    db_path: str = ""
 
-    # SQLite DB path for market data
-    db_path: str = "data/market.db"
+    def __post_init__(self):
+        if not self.api_base_url:
+            self.api_base_url = "http://127.0.0.1:8000"
+        if not self.db_path:
+            from src.config import get_settings
+            settings = get_settings()
+            self.db_path = str(settings.data_dir / "market.db")
 
     # Scan interval (seconds) when running in loop mode
     scan_interval_seconds: float = 60.0
