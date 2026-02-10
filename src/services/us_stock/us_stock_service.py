@@ -81,24 +81,50 @@ class USStockService:
             'BABA': '阿里巴巴', 'PDD': '拼多多', 'JD': '京东', 'BIDU': '百度',
             'NIO': '蔚来', 'XPEV': '小鹏', 'LI': '理想', 'BILI': 'B站', 'FUTU': '富途',
         },
+        # 新增板块（只有ETF，无个股监控）
+        'biotech': {},
+        'solar': {},
+        'clean_energy': {},
+        'gold': {},
+        'silver': {},
+        'bonds_long': {},
+        'technology': {},
     }
 
-    # ── 板块 ETF 映射 ──
+    # ── 板块 ETF 映射 (扩展至20+) ──
     SECTOR_ETFS = {
+        # 传统SPDR板块 (11个)
         'technology': 'XLK', 'communication': 'XLC', 'consumer_disc': 'XLY',
         'consumer_staples': 'XLP', 'healthcare': 'XLV', 'financials': 'XLF',
         'energy': 'XLE', 'industrials': 'XLI', 'materials': 'XLB',
-        'real_estate': 'XLRE', 'utilities': 'XLU', 'semiconductors': 'SMH',
+        'real_estate': 'XLRE', 'utilities': 'XLU',
+        # 主题ETF
+        'semiconductors': 'SMH',      # 半导体
+        'ai_concept': 'ARKK',         # ARK创新/AI
+        'biotech': 'ARKG',            # ARK基因组/生物科技
+        'china_adr': 'KWEB',          # 中概互联网
+        'ev_newenergy': 'LIT',        # 锂电/电池
+        'solar': 'TAN',               # 太阳能
+        'clean_energy': 'ICLN',       # 清洁能源
+        # 商品ETF
+        'gold': 'GLD',                # 黄金
+        'silver': 'SLV',              # 白银
+        # 债券ETF
+        'bonds_long': 'TLT',          # 长期美债
     }
 
     # ── 板块中文名 ──
     SECTOR_NAMES = {
         'indexes': '主要指数', 'mag7': '科技七巨头', 'semiconductors': '半导体',
-        'ai_concept': 'AI概念', 'communication': '通信服务', 'consumer_disc': '可选消费',
+        'ai_concept': 'AI/创新', 'communication': '通信服务', 'consumer_disc': '可选消费',
         'consumer_staples': '必需消费', 'healthcare': '医疗健康', 'financials': '金融',
         'energy': '能源', 'industrials': '工业', 'materials': '材料',
-        'real_estate': '房地产', 'utilities': '公用事业', 'ev_newenergy': '电动车/新能源',
-        'crypto_fintech': '加密/金融科技', 'china_adr': '中概股',
+        'real_estate': '房地产', 'utilities': '公用事业', 'ev_newenergy': '锂电/电池',
+        'crypto_fintech': '加密/金融科技', 'china_adr': '中概互联',
+        # 新增板块
+        'technology': '科技', 'biotech': '生物科技', 'solar': '太阳能',
+        'clean_energy': '清洁能源', 'gold': '黄金ETF', 'silver': '白银ETF',
+        'bonds_long': '长期美债',
     }
 
     # ── 期货/商品 ──

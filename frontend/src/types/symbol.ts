@@ -4,6 +4,7 @@ export interface SymbolMeta {
   ticker: string;
   name: string;
   isFocus?: boolean;             // 是否重点关注
+  positioning?: string | null;   // 公司一句话定位描述
   totalMv: number | null;       // 总市值（万元）
   circMv: number | null;         // 流通市值（万元）
   peTtm: number | null;          // 市盈率TTM

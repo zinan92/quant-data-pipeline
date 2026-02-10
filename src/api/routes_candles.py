@@ -21,12 +21,14 @@ router = APIRouter()
 KLINE_TIMEFRAME_MAP = {
     "day": KlineTimeframe.DAY,
     "30m": KlineTimeframe.MINS_30,
+    "5m": KlineTimeframe.MINS_5,
 }
 
 # Timeframe映射 (API参数 -> 响应枚举)
 RESPONSE_TIMEFRAME_MAP = {
     "day": Timeframe.DAY,
     "30m": Timeframe.MINS_30,
+    "5m": Timeframe.MINS_5,
 }
 
 

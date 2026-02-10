@@ -3818,6 +3818,16 @@ body {
   font-family: monospace;
 }
 
+.watchlist-card__positioning {
+  font-size: 0.75rem;
+  color: #6b7280;
+  font-weight: normal;
+  font-style: italic;
+  margin-left: 0.5rem;
+  padding-left: 0.5rem;
+  border-left: 2px solid rgba(99, 102, 241, 0.3);
+}
+
 /* 赛道标签 */
 .watchlist-card__sector-wrapper {
   position: relative;

@@ -33,6 +33,7 @@ class WatchlistItemResponse(BaseModel):
     category: str | None = "未分类"
     added_at: str
     is_focus: bool = Field(default=False, serialization_alias="isFocus")
+    positioning: str | None = Field(default=None, description="公司一句话定位描述")
     # 可选的其他股票信息（使用Field设置序列化别名）
     total_mv: float | None = Field(default=None, serialization_alias="totalMv")
     circ_mv: float | None = Field(default=None, serialization_alias="circMv")
@@ -82,6 +83,7 @@ def get_watchlist():
                 category=item.category or "未分类",
                 added_at=item.added_at.isoformat(),
                 is_focus=bool(item.is_focus) if hasattr(item, 'is_focus') else False,
+                positioning=item.positioning if hasattr(item, 'positioning') else None,
                 total_mv=symbol.total_mv,
                 circ_mv=symbol.circ_mv,
                 pe_ttm=symbol.pe_ttm,
@@ -605,4 +607,29 @@ def toggle_focus(ticker: str):
             "message": f"{'已添加到' if not current_status else '已移除'}重点关注",
             "ticker": ticker,
             "is_focus": not current_status
+        }
+
+
+class PositioningUpdate(BaseModel):
+    """更新公司定位的请求"""
+    positioning: str = Field(..., max_length=256, description="公司一句话定位描述")
+
+
+@router.patch("/{ticker}/positioning")
+def update_positioning(ticker: str, request: PositioningUpdate):
+    """更新股票的一句话定位描述"""
+    with session_scope() as session:
+        watchlist_item = session.query(Watchlist).filter(
+            Watchlist.ticker == ticker
+        ).first()
+
+        if not watchlist_item:
+            raise HTTPException(status_code=404, detail="不在自选列表中")
+
+        watchlist_item.positioning = request.positioning
+
+        return {
+            "message": f"已更新 {ticker} 的定位描述",
+            "ticker": ticker,
+            "positioning": request.positioning
         }
