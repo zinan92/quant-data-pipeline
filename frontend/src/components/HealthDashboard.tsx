@@ -44,7 +44,14 @@ function parseTime(ts: string | null): Date | null {
   if (/^\d{4}-\d{2}-\d{2}$/.test(ts)) {
     return new Date(ts + "T23:59:59");
   }
-  const d = new Date(ts);
+  // Handle time-only strings (e.g. "00:29:46") — assume today
+  if (/^\d{2}:\d{2}:\d{2}$/.test(ts)) {
+    const today = new Date().toISOString().slice(0, 10);
+    return new Date(`${today}T${ts}`);
+  }
+  // Handle "YYYY-MM-DD HH:MM:SS UTC" format
+  const normalized = ts.replace(" UTC", "Z").replace(" ", "T");
+  const d = new Date(normalized);
   return isNaN(d.getTime()) ? null : d;
 }
 
@@ -77,7 +84,8 @@ function getFreshness(key: string, src: SourceStatus, isQualitative: boolean): F
     return "critical";
   const ts = getTimestamp(src);
   const age = getAgeMinutes(ts);
-  if (age === null) return "critical";
+  // If backend says "ok" but we can't parse a timestamp, trust the status
+  if (age === null) return src.status === "ok" ? "fresh" : "critical";
   const thresholdKey = isQualitative ? "qualitative" : classifySource(key);
   const { yellow, red } = THRESHOLDS[thresholdKey];
   if (age > red) return "critical";
@@ -105,12 +113,12 @@ function prettyName(key: string): string {
     index_realtime: "A股指数实时",
     commodities_realtime: "商品实时",
     crypto_ws: "加密货币WebSocket",
-    klines_stock_day: "股票日K",
-    klines_index_day: "指数日K",
-    klines_concept_day: "概念日K",
-    klines_stock_30m: "股票30分K",
-    klines_index_30m: "指数30分K",
-    klines_concept_30m: "概念30分K",
+    klines_stock_DAY: "股票日K",
+    klines_index_DAY: "指数日K",
+    klines_concept_DAY: "概念日K",
+    klines_stock_MINS_30: "股票30分K",
+    klines_index_MINS_30: "指数30分K",
+    klines_concept_MINS_30: "概念30分K",
     file_hot_concept_categories: "热门概念分类",
     file_concept_to_tickers: "概念→个股映射",
     file_ticker_to_concepts: "个股→概念映射",
