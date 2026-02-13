@@ -156,7 +156,7 @@ def format_intel_section(signals_data: dict) -> list[str]:
         for a in high_articles[:3]:
             src = a.get("source", "")
             author = a.get("author", "")
-            title = a.get("title", "")[:50]
+            title = (a.get("title") or "")[:50]
             prefix = f"[{src}]"
             if author:
                 prefix += f" @{author}"
