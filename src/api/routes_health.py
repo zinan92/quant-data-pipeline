@@ -198,6 +198,9 @@ async def unified_health_check(db: Session = Depends(get_db)) -> Dict[str, Any]:
     # 2. Quant kline/file freshness
     freshness = get_data_freshness(db)
     for key, info in freshness.get("sources", {}).items():
+        # Mark never-loaded sources as unconfigured instead of error
+        if info.get("status") == "no_data" or (info.get("status") == "missing" and not info.get("exists")):
+            info["status"] = "unconfigured"
         quant[key] = info
 
     # 3. Qualitative sources from park-intel
@@ -221,13 +224,13 @@ async def unified_health_check(db: Session = Depends(get_db)) -> Dict[str, Any]:
     except (httpx.ConnectError, httpx.TimeoutException):
         qualitative["service_status"] = "unavailable"
 
-    # 4. Overall status
+    # 4. Overall status (skip unconfigured sources)
     all_statuses = []
     for v in quant.values():
-        if isinstance(v, dict):
+        if isinstance(v, dict) and v.get("status") != "unconfigured":
             all_statuses.append(v.get("status", "ok"))
     for k, v in qualitative.items():
-        if isinstance(v, dict):
+        if isinstance(v, dict) and v.get("status") != "unconfigured":
             all_statuses.append(v.get("status", "ok"))
     if qualitative.get("service_status") == "unavailable":
         all_statuses.append("error")

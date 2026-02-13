@@ -25,7 +25,7 @@ interface UnifiedHealth {
   qualitative: Record<string, SourceStatus | string>;
 }
 
-type Freshness = "fresh" | "stale" | "critical";
+type Freshness = "fresh" | "stale" | "critical" | "unconfigured";
 
 function getTimestamp(src: SourceStatus): string | null {
   return (
@@ -63,10 +63,21 @@ function getAgeMinutes(ts: string | null): number | null {
 
 type ThresholdKey = "realtime" | "daily" | "qualitative";
 
+/** Check if a date falls on a weekend or is followed by weekend days. */
+function getDailyThresholds(): { yellow: number; red: number } {
+  const now = new Date();
+  const day = now.getDay(); // 0=Sun, 6=Sat
+  // On weekends or Monday before market open, relax daily thresholds
+  if (day === 0 || day === 6 || day === 1) {
+    return { yellow: 50 * 60, red: 72 * 60 }; // 50h yellow, 72h red
+  }
+  return { yellow: 26 * 60, red: 48 * 60 };
+}
+
 const THRESHOLDS: Record<ThresholdKey, { yellow: number; red: number }> = {
   realtime: { yellow: 5, red: 30 },
-  daily: { yellow: 26 * 60, red: 48 * 60 },
-  qualitative: { yellow: 12 * 60, red: 24 * 60 },
+  daily: getDailyThresholds(),
+  qualitative: { yellow: 24 * 60, red: 72 * 60 },
 };
 
 function classifySource(key: string): ThresholdKey {
@@ -80,7 +91,9 @@ function classifySource(key: string): ThresholdKey {
 }
 
 function getFreshness(key: string, src: SourceStatus, isQualitative: boolean): Freshness {
-  if (src.status === "error" || src.status === "missing" || src.status === "no_data")
+  if (src.status === "unconfigured" || src.status === "no_data" || src.status === "missing")
+    return "unconfigured";
+  if (src.status === "error")
     return "critical";
   const ts = getTimestamp(src);
   const age = getAgeMinutes(ts);
@@ -96,6 +109,7 @@ function getFreshness(key: string, src: SourceStatus, isQualitative: boolean): F
 function freshnessIcon(f: Freshness): string {
   if (f === "fresh") return "\u{1F7E2}";
   if (f === "stale") return "\u{1F7E1}";
+  if (f === "unconfigured") return "\u26AA";
   return "\u{1F534}";
 }
 
@@ -134,7 +148,7 @@ function prettyName(key: string): string {
 }
 
 function overallLabel(status: string): { text: string; cls: string } {
-  if (status === "healthy") return { text: "所有数据正常", cls: "health-overall--ok" };
+  if (status === "healthy") return { text: "所有活跃数据源正常", cls: "health-overall--ok" };
   if (status === "degraded") return { text: "部分数据可能过期", cls: "health-overall--warn" };
   return { text: "数据异常", cls: "health-overall--error" };
 }
