@@ -45,6 +45,70 @@ class SchedulerManager:
             replace_existing=True,
         )
 
+        # ── Perception pipeline scans ────────────────────────────────
+
+        # A股盘中 (9:15-15:30 CST, Mon-Fri)
+        self.scheduler.add_job(
+            self._perception_scan_job,
+            trigger=CronTrigger(
+                minute="*/5",
+                hour="9-15",
+                day_of_week="mon-fri",
+                timezone="Asia/Shanghai",
+            ),
+            id="perception-cn",
+            replace_existing=True,
+        )
+
+        # 美股盘中 evening leg (21:30-23:55 CST, Mon-Fri)
+        self.scheduler.add_job(
+            self._perception_scan_job,
+            trigger=CronTrigger(
+                minute="*/5",
+                hour="21-23",
+                day_of_week="mon-fri",
+                timezone="Asia/Shanghai",
+            ),
+            id="perception-us-evening",
+            replace_existing=True,
+        )
+
+        # 美股盘中 morning leg (00:00-04:00 CST, Tue-Sat)
+        self.scheduler.add_job(
+            self._perception_scan_job,
+            trigger=CronTrigger(
+                minute="*/5",
+                hour="0-4",
+                day_of_week="tue-sat",
+                timezone="Asia/Shanghai",
+            ),
+            id="perception-us-morning",
+            replace_existing=True,
+        )
+
+    def _perception_scan_job(self) -> None:
+        """Run one perception scan cycle (sync wrapper for async pipeline)."""
+        import asyncio
+
+        from src.perception.pipeline import PerceptionPipeline
+
+        loop = asyncio.new_event_loop()
+        try:
+            pipeline = PerceptionPipeline()
+            loop.run_until_complete(pipeline.start())
+            result = loop.run_until_complete(pipeline.scan())
+            loop.run_until_complete(pipeline.stop())
+            LOGGER.info(
+                "Perception scan: %d events, %d signals, %.0fms",
+                result.events_fetched,
+                result.signals_detected,
+                result.duration_ms,
+            )
+        except Exception as e:
+            LOGGER.error("Perception scan failed: %s", e)
+        finally:
+            loop.close()
+
     def _refresh_watchlist_job(self) -> None:
         LOGGER.info("Scheduled refresh kicked off")
 

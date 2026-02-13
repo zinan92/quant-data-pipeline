@@ -5,6 +5,8 @@
 - GET  /api/perception/health          — pipeline health status
 - POST /api/perception/trading-signals — get trading-ready signals
 - GET  /api/perception/market-context  — current market context
+- GET  /api/perception/history         — historical persisted signals
+- GET  /api/perception/reports         — historical scan reports
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from src.config import get_settings
 from src.exceptions import DatabaseError
 
 from src.perception.pipeline import PerceptionPipeline, PipelineConfig
+from src.services.perception_store import PerceptionStore
 from src.perception.integration.trading_bridge import TradingBridge, BridgeConfig
 from src.perception.integration.market_context import MarketContextBuilder, ContextConfig
 from src.utils.logging import get_logger
@@ -192,4 +195,48 @@ async def get_market_context() -> Dict[str, Any]:
     return {
         "status": "ok",
         **ctx.to_dict(),
+    }
+
+
+@router.get("/history")
+async def get_history(
+    hours: int = 24,
+    asset: Optional[str] = None,
+    limit: int = 100,
+) -> Dict[str, Any]:
+    """Query historical persisted signals.
+
+    Parameters
+    ----------
+    hours : int
+        Look back this many hours (default 24).
+    asset : str | None
+        Filter by asset ticker/name.
+    limit : int
+        Max results (default 100).
+    """
+    store = PerceptionStore()
+    signals = store.get_signals(asset=asset, hours=hours, limit=limit)
+    return {
+        "status": "ok",
+        "count": len(signals),
+        "signals": signals,
+    }
+
+
+@router.get("/reports")
+async def get_reports(hours: int = 24) -> Dict[str, Any]:
+    """Query historical scan reports.
+
+    Parameters
+    ----------
+    hours : int
+        Look back this many hours (default 24).
+    """
+    store = PerceptionStore()
+    reports = store.get_reports(hours=hours)
+    return {
+        "status": "ok",
+        "count": len(reports),
+        "reports": reports,
     }

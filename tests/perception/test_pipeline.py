@@ -1012,10 +1012,10 @@ class TestEdgeCases:
 
     @pytest.mark.asyncio
     async def test_pipeline_default_sources_and_detectors(self):
-        """Default pipeline creates 3 sources and 6 detectors."""
+        """Default pipeline creates 4 sources and 7 detectors."""
         pipeline = PerceptionPipeline()
-        assert len(pipeline._sources) == 3
-        assert len(pipeline._detectors) == 6
+        assert len(pipeline._sources) == 4
+        assert len(pipeline._detectors) == 7
 
         # Clean up
         await pipeline.stop()

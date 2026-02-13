@@ -17,6 +17,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
 from src.perception.aggregator import (
     AggregationReport,
@@ -29,6 +30,7 @@ from src.perception.detectors.flow_detector import FlowDetector
 from src.perception.detectors.keyword_detector import KeywordDetector
 from src.perception.detectors.price_detector import PriceDetector
 from src.perception.detectors.technical_detector import TechnicalDetector
+from src.perception.detectors.narrative_detector import NarrativeDetector
 from src.perception.detectors.volume_detector import VolumeDetector
 from src.perception.events import RawMarketEvent
 from src.perception.health import HealthMonitor, HealthStatus, SourceHealth
@@ -37,6 +39,7 @@ from src.perception.sources.alert_source import AlertSource
 from src.perception.sources.base import DataSource
 from src.perception.sources.market_data_source import MarketDataSource
 from src.perception.sources.news_source import NewsSource
+from src.perception.sources.qualitative_source import QualitativeSource
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -245,6 +248,16 @@ class PerceptionPipeline:
             errors=errors,
         )
         self._last_result = result
+
+        # Persist scan result (best-effort — failure does not affect return)
+        try:
+            from src.services.perception_store import PerceptionStore
+
+            scan_id = uuid4().hex
+            PerceptionStore().save_scan(scan_id, result)
+        except Exception as exc:
+            logger.warning("Failed to persist scan result: %s", exc)
+
         return result
 
     async def run_loop(self, max_cycles: Optional[int] = None) -> None:
@@ -333,6 +346,9 @@ class PerceptionPipeline:
                 base_url=cfg.api_base_url,
                 timeout=cfg.http_timeout,
             ),
+            QualitativeSource(
+                timeout=cfg.http_timeout,
+            ),
         ]
 
     def _build_default_detectors(self) -> List[Detector]:
@@ -344,6 +360,7 @@ class PerceptionPipeline:
             TechnicalDetector(),
             PriceDetector(),
             VolumeDetector(),
+            NarrativeDetector(),
         ]
 
     def _build_route_map(self) -> Dict[str, List[Detector]]:

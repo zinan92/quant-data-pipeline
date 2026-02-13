@@ -29,6 +29,7 @@ from src.models.kline import DataUpdateLog, Kline
 from src.models.simulated import SimulatedAccount, SimulatedPosition, SimulatedTrade
 from src.models.symbol import SymbolMetadata
 from src.models.trade_calendar import TradeCalendar
+from src.models.perception_signal import PerceptionScanReport, PerceptionSignal
 from src.models.user import KlineEvaluation, Watchlist
 
 __all__ = [
@@ -59,4 +60,7 @@ __all__ = [
     "SimulatedAccount",
     "SimulatedTrade",
     "SimulatedPosition",
+    # Perception
+    "PerceptionSignal",
+    "PerceptionScanReport",
 ]

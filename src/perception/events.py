@@ -24,6 +24,7 @@ class EventSource(str, Enum):
     CLS = "cls"  # 财联社
     THS = "ths"  # 同花顺
     EXCHANGE = "exchange"
+    PARK_INTEL = "park_intel"  # qualitative signals from park-intel
     MANUAL = "manual"
 
 

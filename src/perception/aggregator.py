@@ -79,6 +79,8 @@ class AggregatorConfig:
         "flow/sector_rotation": 0.65,
         "anomaly": 0.6,
         "keyword": 0.5,
+        "narrative/topic_heat": 0.55,
+        "narrative/article": 0.6,
     })
 
     # Default weight for unknown sources
