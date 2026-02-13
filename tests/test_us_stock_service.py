@@ -19,20 +19,20 @@ class TestUSStockService:
     def test_watchlists_config(self):
         """测试监控列表配置"""
         service = USStockService()
-        
+
         assert 'indexes' in service.WATCHLISTS
-        assert 'tech' in service.WATCHLISTS
+        assert 'mag7' in service.WATCHLISTS
         assert 'china_adr' in service.WATCHLISTS
-        assert 'ai' in service.WATCHLISTS
-        
+        assert 'ai_concept' in service.WATCHLISTS
+
         # 检查指数
         assert '^GSPC' in service.WATCHLISTS['indexes']
         assert '^DJI' in service.WATCHLISTS['indexes']
-        
-        # 检查科技股
-        assert 'AAPL' in service.WATCHLISTS['tech']
-        assert 'NVDA' in service.WATCHLISTS['tech']
-        
+
+        # 检查科技股 (mag7)
+        assert 'AAPL' in service.WATCHLISTS['mag7']
+        assert 'NVDA' in service.WATCHLISTS['mag7']
+
         # 检查中概股
         assert 'BABA' in service.WATCHLISTS['china_adr']
         assert 'PDD' in service.WATCHLISTS['china_adr']
@@ -41,10 +41,10 @@ class TestUSStockService:
         """测试获取可用监控列表"""
         service = USStockService()
         watchlists = service.get_available_watchlists()
-        
+
         assert isinstance(watchlists, dict)
         assert 'indexes' in watchlists
-        assert 'tech' in watchlists
+        assert 'mag7' in watchlists
         assert isinstance(watchlists['indexes'], list)
     
     def test_get_us_stock_service_singleton(self):
@@ -63,10 +63,10 @@ class TestUSStockService:
             'change': 1.5,
             'change_pct': 1.0,
         }
-        
+
         service = USStockService()
-        quotes = service.get_watchlist_quotes('tech')
-        
+        quotes = service.get_watchlist_quotes('mag7')
+
         assert len(quotes) > 0
         assert mock_get_quote.called
     

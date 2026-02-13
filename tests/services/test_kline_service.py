@@ -276,7 +276,7 @@ class TestKlineServiceMetadata:
         assert result["symbol_type"] == "index"
         assert result["symbol_code"] == "000001.SH"
         assert result["symbol_name"] == "上证指数"
-        assert result["timeframe"] == "day"
+        assert result["timeframe"] == "DAY"
         assert result["count"] == 1
         assert len(result["klines"]) == 1
 
