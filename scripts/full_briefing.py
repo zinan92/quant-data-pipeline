@@ -181,7 +181,7 @@ def section_indices(index_data: dict) -> list[str]:
 @safe_section("市场异动")
 def section_alerts() -> list[str]:
     try:
-        r = requests.get(f"{API_BASE}/api/alerts", timeout=8)
+        r = requests.get(f"{API_BASE}/api/anomaly/alerts", timeout=20)
         if r.status_code != 200:
             return ["⚠️ **市场异动**", "  API请求失败"]
         
@@ -327,10 +327,9 @@ def section_intraday_table() -> list[str]:
 # ═══════════════════════════════════════════════════════════════
 # 4. FLOW-TOP20 (概念资金流向)
 # ═══════════════════════════════════════════════════════════════
-@safe_section("Flow-TOP20")
 def section_flow_top20() -> tuple[list[str], Optional]:
     try:
-        r = requests.get(f"{API_BASE}/api/flow", timeout=10)
+        r = requests.get(f"{API_BASE}/api/rotation/top-inflow", timeout=10)
         if r.status_code != 200:
             return ["💰 **Flow-TOP20**", "  API请求失败"], None
         
@@ -342,6 +341,16 @@ def section_flow_top20() -> tuple[list[str], Optional]:
 
     import pandas as pd
     df = pd.DataFrame(df)
+    
+    # Remap new API column names to legacy names used throughout this function
+    col_map = {"name": "行业", "net_inflow": "净额", "pct_change": "涨跌幅"}
+    df = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
+    
+    # Add placeholder columns for leader stock (not available in new API)
+    if "领涨股" not in df.columns:
+        df["领涨股"] = ""
+    if "领涨股-涨跌幅" not in df.columns:
+        df["领涨股-涨跌幅"] = 0.0
     
     total = len(df)
     net_in = len(df[df["净额"] > 0])
@@ -418,9 +427,13 @@ def section_flow_top20() -> tuple[list[str], Optional]:
     for i, (_, row) in enumerate(top5.iterrows(), 1):
         name = row["行业"]
         net = row["净额"]
-        lead = row["领涨股"]
-        lead_pct = row["领涨股-涨跌幅"]
-        lines.append(f"  {i}. {name} {net:+.0f}亿 | 领涨:{lead}({lead_pct:+.1f}%)")
+        lead = row.get("领涨股", "")
+        pct = row.get("涨跌幅", 0)
+        if lead:
+            lead_pct = row.get("领涨股-涨跌幅", 0)
+            lines.append(f"  {i}. {name} {net:+.0f}亿 | 领涨:{lead}({lead_pct:+.1f}%)")
+        else:
+            lines.append(f"  {i}. {name} {net:+.0f}亿 | 板块{pct:+.1f}%")
 
     # 流出前3 (也过滤宽基)
     bot3 = sector_df.tail(3).iloc[::-1]
@@ -867,12 +880,15 @@ def section_stock_sectors() -> list[str]:
 @safe_section("自选股异动")
 def section_watchlist() -> list[str]:
     try:
-        r = requests.get(f"{API_BASE}/api/watchlist/alerts", timeout=8)
+        r = requests.get(f"{API_BASE}/api/watchlist/analytics", timeout=8)
         if r.status_code != 200:
             return ["📊 **自选股异动**", "  API请求失败"]
         
-        alerts = r.json()
+        data = r.json()
         lines = ["📊 **自选股异动**"]
+        
+        # Handle both list and dict responses
+        alerts = data if isinstance(data, list) else data.get("alerts", data.get("stocks", []))
         
         if not alerts:
             return lines + ["  暂无异动"]
@@ -880,9 +896,9 @@ def section_watchlist() -> list[str]:
         # Show up to 8 alerts
         for i, alert in enumerate(alerts[:8], 1):
             name = alert.get("name", "")
-            code = alert.get("code", "")
-            trigger = alert.get("trigger", "")
-            value = alert.get("value", 0)
+            code = alert.get("code", alert.get("ticker", ""))
+            trigger = alert.get("trigger", alert.get("signal", ""))
+            value = alert.get("value", alert.get("change_pct", 0))
             
             emoji = "📈" if trigger in ["涨停", "急拉"] else "📉" if trigger in ["跌停", "急跌"] else "⚡"
             lines.append(f"  {emoji} {name}({code}) {trigger} {value:+.2f}%")
@@ -893,16 +909,43 @@ def section_watchlist() -> list[str]:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 8. 市场快讯
+# 8. 舆情信号 (park-intel)
+# ═══════════════════════════════════════════════════════════════
+@safe_section("舆情信号")
+def section_intel_signals() -> list[str]:
+    """Fetch qualitative signals from park-intel and format for A-share briefing."""
+    lines = ["📡 **舆情信号** (park-intel)"]
+    try:
+        r = requests.get(
+            "http://127.0.0.1:8001/api/articles/signals",
+            timeout=10,
+        )
+        if r.status_code != 200:
+            return lines + ["  park-intel 请求失败"]
+        data = r.json()
+    except Exception:
+        return lines + ["  park-intel 不可用"]
+
+    # Use narrative_mapping to format
+    sys.path.insert(0, str(PROJECT_ROOT))
+    from src.services.narrative_mapping import format_intel_section
+    lines.extend(format_intel_section(data))
+    return lines
+
+
+# ═══════════════════════════════════════════════════════════════
+# 9. 市场快讯
 # ═══════════════════════════════════════════════════════════════
 @safe_section("市场快讯")
 def section_news() -> list[str]:
     try:
-        r = requests.get(f"{API_BASE}/api/news", timeout=8)
+        r = requests.get(f"{API_BASE}/api/news/latest", timeout=8)
         if r.status_code != 200:
             return ["📰 **市场快讯**", "  API请求失败"]
         
-        news = r.json()
+        data = r.json()
+        # Handle both list and {"news": [...]} responses
+        news = data if isinstance(data, list) else data.get("news", data.get("data", []))
         lines = ["📰 **市场快讯**"]
         
         if not news:
@@ -927,7 +970,7 @@ def main():
     flow_lines, flow_df = section_flow_top20()
     alert_data = None
     try:
-        r = requests.get(f"{API_BASE}/api/alerts", timeout=8)
+        r = requests.get(f"{API_BASE}/api/anomaly/alerts", timeout=20)
         if r.status_code == 200:
             alert_data = r.json()
     except Exception:
@@ -967,7 +1010,11 @@ def main():
     output_lines.extend(section_watchlist())
     output_lines.append("")
 
-    # ── 8. 快讯 ──
+    # ── 8. 舆情信号 ──
+    output_lines.extend(section_intel_signals())
+    output_lines.append("")
+
+    # ── 9. 快讯 ──
     output_lines.extend(section_news())
 
     output_lines.append("")

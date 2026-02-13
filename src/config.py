@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     tushare_delay: float = Field(default=0.3, alias="TUSHARE_DELAY")
     tushare_max_retries: int = Field(default=3, alias="TUSHARE_MAX_RETRIES")
 
+    # Park-intel (qualitative data pipeline)
+    park_intel_url: str = Field(default="http://127.0.0.1:8001", alias="PARK_INTEL_URL")
+
     # Feature flags
     enable_concept_boards: bool = Field(default=True, alias="ENABLE_CONCEPT_BOARDS")
     enable_industry_levels: bool = Field(default=True, alias="ENABLE_INDUSTRY_LEVELS")
