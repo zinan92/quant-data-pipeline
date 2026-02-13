@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, text
 from sqlalchemy.orm import Session
 
 from src.api.dependencies import get_data_service, get_db
@@ -108,7 +108,32 @@ def get_data_freshness(db: Session = Depends(get_db)) -> dict[str, Any]:
             }
             issues.append(f"file_{name}: 文件不存在 ({path})")
 
-    # 3. 整体健康状态
+    # 3. 检查 stock_sectors 自选板块
+    try:
+        row = db.execute(
+            text("SELECT COUNT(*), COUNT(DISTINCT sector), MAX(updated_at) FROM stock_sectors")
+        ).first()
+        total, sector_count, last_updated = row if row else (0, 0, None)
+        sources["stock_sectors"] = {
+            "last_update": last_updated,
+            "record_count": total,
+            "sector_count": sector_count,
+            "status": "ok" if total > 0 else "no_data",
+        }
+        if not total:
+            issues.append("stock_sectors: 无数据")
+    except Exception as e:
+        logger.exception("数据新鲜度查询失败: stock_sectors")
+        sources["stock_sectors"] = {
+            "last_update": None,
+            "record_count": 0,
+            "sector_count": 0,
+            "status": "error",
+            "error": str(e) if get_settings().debug else "Internal server error",
+        }
+        issues.append("stock_sectors: 查询失败")
+
+    # 4. 整体健康状态
     healthy = len(issues) == 0
     return {
         "healthy": healthy,

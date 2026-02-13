@@ -13,6 +13,7 @@ interface SourceStatus {
   symbols?: number;
   stale?: number;
   record_count?: number;
+  sector_count?: number;
   exists?: boolean;
   detail?: string;
   [key: string]: unknown;
@@ -61,7 +62,7 @@ function getAgeMinutes(ts: string | null): number | null {
   return (Date.now() - d.getTime()) / 60000;
 }
 
-type ThresholdKey = "realtime" | "daily" | "qualitative";
+type ThresholdKey = "realtime" | "daily" | "qualitative" | "manual";
 
 /** Check if a date falls on a weekend or is followed by weekend days. */
 function getDailyThresholds(): { yellow: number; red: number } {
@@ -78,6 +79,7 @@ const THRESHOLDS: Record<ThresholdKey, { yellow: number; red: number }> = {
   realtime: { yellow: 5, red: 30 },
   daily: getDailyThresholds(),
   qualitative: { yellow: 24 * 60, red: 72 * 60 },
+  manual: { yellow: 14 * 24 * 60, red: 30 * 24 * 60 },
 };
 
 function classifySource(key: string): ThresholdKey {
@@ -87,6 +89,7 @@ function classifySource(key: string): ThresholdKey {
     key === "crypto_ws"
   )
     return "realtime";
+  if (key === "stock_sectors") return "manual";
   return "daily";
 }
 
@@ -136,6 +139,7 @@ function prettyName(key: string): string {
     file_hot_concept_categories: "热门概念分类",
     file_concept_to_tickers: "概念→个股映射",
     file_ticker_to_concepts: "个股→概念映射",
+    stock_sectors: "自选板块(19)",
     file_monitor_cache: "监控缓存",
     file_momentum_signals: "动量信号",
     twitter: "Twitter",
@@ -225,6 +229,7 @@ export function HealthDashboard() {
                   <td className="health-table__age">{formatAge(ts)}</td>
                   <td className="health-table__detail">
                     {src.record_count != null && `${src.record_count.toLocaleString()} 条`}
+                    {src.sector_count != null && ` / ${src.sector_count} 板块`}
                     {src.symbols != null && `${src.symbols} 品种`}
                     {src.stale ? ` (${src.stale} stale)` : ""}
                     {src.detail || ""}
