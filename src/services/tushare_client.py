@@ -494,14 +494,19 @@ class TushareClient:
             end_date=end_date
         )
 
-    def get_latest_trade_date(self) -> str:
+    def get_latest_trade_date(self, with_data: bool = False) -> str:
         """
         获取最新交易日期
+
+        Args:
+            with_data: 如果为 True，返回已有 daily_basic 数据的最新交易日
+                       （排除今日盘中尚无数据的情况）
 
         Returns:
             str: 日期字符串 YYYYMMDD
         """
         today = datetime.now().strftime('%Y%m%d')
+        now_hour = datetime.now().hour
 
         try:
             # 获取交易日历
@@ -512,12 +517,21 @@ class TushareClient:
                 end_date=today
             )
 
-            # 过滤出交易日
-            trade_days = df[df['is_open'] == 1]['cal_date'].tolist()
+            # 过滤出交易日，按日期降序排列
+            trade_days = sorted(
+                df[df['is_open'] == 1]['cal_date'].tolist(),
+                reverse=True
+            )
 
-            if trade_days:
-                # Tushare 返回的是降序排列，取第一个元素（最新日期）
-                return trade_days[0]  # 最新的交易日
+            if not trade_days:
+                return today
+
+            # 如果需要有数据的日期，且当前在收盘前（17点前），跳过今天
+            # Tushare daily_basic 数据通常在 16:00-17:00 后才可用
+            if with_data and now_hour < 17:
+                trade_days = [d for d in trade_days if d != today]
+
+            return trade_days[0] if trade_days else today
 
         except Exception as e:
             logger.warning(f"获取交易日历失败: {e}")

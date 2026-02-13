@@ -1,1 +1,1 @@
-/Users/wendy/clawd/ashare/scripts/us_briefing_v2.py
+/Users/wendy/ashare/scripts/us_briefing_v2.py

@@ -293,8 +293,8 @@ class TushareDataProvider:
 
         LOGGER.info("获取元数据 | tickers=%s", tickers)
 
-        # 获取最新交易日
-        latest_date = self.client.get_latest_trade_date()
+        # 获取最新有数据的交易日（避免盘中无 daily_basic 数据）
+        latest_date = self.client.get_latest_trade_date(with_data=True)
         LOGGER.debug("使用交易日期: %s", latest_date)
 
         # OPTIMIZATION: Preload basic stock list once instead of in loop
@@ -309,6 +309,18 @@ class TushareDataProvider:
         # OPTIMIZATION: Batch fetch daily_basic for entire trade date (1 API call vs 5000)
         LOGGER.debug("批量获取每日指标 | trade_date=%s", latest_date)
         daily_basic_df = self.client.fetch_daily_basic(trade_date=latest_date)
+        
+        # Fallback: if no data for latest date, try previous trade dates
+        if len(daily_basic_df) == 0:
+            LOGGER.warning("trade_date=%s 无 daily_basic 数据，尝试前一交易日", latest_date)
+            from datetime import datetime as dt, timedelta
+            for days_back in range(1, 5):
+                fallback_date = (dt.strptime(latest_date, '%Y%m%d') - timedelta(days=days_back)).strftime('%Y%m%d')
+                daily_basic_df = self.client.fetch_daily_basic(trade_date=fallback_date)
+                if len(daily_basic_df) > 0:
+                    LOGGER.info("使用回退日期 %s，获取 %d 条数据", fallback_date, len(daily_basic_df))
+                    break
+        
         daily_basic_dict = daily_basic_df.set_index('ts_code').to_dict('index')
         LOGGER.debug("✓ 已加载 %d 只股票的每日指标", len(daily_basic_df))
 
