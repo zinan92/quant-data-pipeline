@@ -64,7 +64,7 @@ def get_data_freshness(db: Session = Depends(get_db)) -> dict[str, Any]:
                 count = result[1] if result else 0
 
                 sources[key] = {
-                    "last_update": last_time.isoformat() if last_time else None,
+                    "last_update": last_time if isinstance(last_time, str) else (last_time.isoformat() if last_time else None),
                     "record_count": count,
                     "status": "ok" if last_time else "no_data",
                 }
