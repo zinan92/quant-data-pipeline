@@ -10,6 +10,8 @@ import { MomentumSignalsView } from "./components/MomentumSignalsView";
 import { ConceptMonitorTable } from "./components/ConceptMonitorTable";
 import { ConceptKlinePanel } from "./components/ConceptKlinePanel";
 import { MultiAssetDashboard } from "./components/MultiAssetDashboard";
+import { HealthDashboard } from "./components/HealthDashboard";
+import "./styles/HealthDashboard.css";
 import type { MAConfig } from "./types/chartConfig";
 import { DEFAULT_MA_CONFIG } from "./types/chartConfig";
 
@@ -68,6 +70,12 @@ function AppShell() {
             onClick={() => navigate("/dashboard")}
           >
             🌍 Dashboard
+          </button>
+          <button
+            className={`topbar__button ${currentPath === "/health" ? "topbar__button--primary" : "topbar__button--secondary"}`}
+            onClick={() => navigate("/health")}
+          >
+            ❤️ 健康
           </button>
           <button
             className={`topbar__button ${currentPath === "/" ? "topbar__button--primary" : "topbar__button--secondary"}`}
@@ -148,6 +156,13 @@ function AppShell() {
           <Route path="/dashboard" element={
             <div className="app__content">
               <MultiAssetDashboard />
+            </div>
+          } />
+
+          {/* 数据健康面板 */}
+          <Route path="/health" element={
+            <div className="app__content">
+              <HealthDashboard />
             </div>
           } />
         </Routes>

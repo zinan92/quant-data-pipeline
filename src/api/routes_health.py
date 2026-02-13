@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from src.api.dependencies import get_db
+from src.config import get_settings
 from src.services.kline_service import KlineService
 from src.models import SymbolType, KlineTimeframe
 from src.utils.logging import get_logger
@@ -176,4 +177,71 @@ async def data_health_check(db: Session = Depends(get_db)) -> Dict[str, Any]:
         "status": overall,
         "checks": checks,
         "timestamp": now.isoformat(),
+    }
+
+
+@router.get("/unified")
+async def unified_health_check(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """
+    Unified health dashboard aggregating quant + qualitative data sources.
+    """
+    from src.api.routes_status import get_data_freshness
+
+    now = datetime.now(timezone(timedelta(hours=8)))
+
+    # 1. Quant realtime checks
+    quant: Dict[str, Any] = {}
+    quant["index_realtime"] = await _check_index_realtime()
+    quant["commodities_realtime"] = await _check_commodities_realtime()
+    quant["crypto_ws"] = await _check_crypto_ws()
+
+    # 2. Quant kline/file freshness
+    freshness = get_data_freshness(db)
+    for key, info in freshness.get("sources", {}).items():
+        quant[key] = info
+
+    # 3. Qualitative sources from park-intel
+    qualitative: Dict[str, Any] = {}
+    park_intel_url = get_settings().park_intel_url.rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            resp = await client.get(f"{park_intel_url}/api/articles/sources")
+        if resp.status_code == 200:
+            for src in resp.json():
+                qualitative[src["source"]] = {
+                    "status": "ok",
+                    "count": src.get("count", 0),
+                    "last_collected_at": src.get("last_collected_at"),
+                    "latest_published_at": src.get("latest_published_at"),
+                    "articles_last_24h": src.get("articles_last_24h", 0),
+                }
+            qualitative["service_status"] = "ok"
+        else:
+            qualitative["service_status"] = "unavailable"
+    except (httpx.ConnectError, httpx.TimeoutException):
+        qualitative["service_status"] = "unavailable"
+
+    # 4. Overall status
+    all_statuses = []
+    for v in quant.values():
+        if isinstance(v, dict):
+            all_statuses.append(v.get("status", "ok"))
+    for k, v in qualitative.items():
+        if isinstance(v, dict):
+            all_statuses.append(v.get("status", "ok"))
+    if qualitative.get("service_status") == "unavailable":
+        all_statuses.append("error")
+
+    if all(s == "ok" for s in all_statuses):
+        overall = "healthy"
+    elif any(s == "error" for s in all_statuses):
+        overall = "unhealthy"
+    else:
+        overall = "degraded"
+
+    return {
+        "status": overall,
+        "timestamp": now.isoformat(),
+        "quant": quant,
+        "qualitative": qualitative,
     }
