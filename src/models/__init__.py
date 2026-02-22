@@ -30,6 +30,7 @@ from src.models.simulated import SimulatedAccount, SimulatedPosition, SimulatedT
 from src.models.symbol import SymbolMetadata
 from src.models.trade_calendar import TradeCalendar
 from src.models.perception_signal import PerceptionScanReport, PerceptionSignal
+from src.models.decision import DecisionRun
 from src.models.user import KlineEvaluation, Watchlist
 
 __all__ = [
@@ -63,4 +64,6 @@ __all__ = [
     # Perception
     "PerceptionSignal",
     "PerceptionScanReport",
+    # Decision Loop
+    "DecisionRun",
 ]
