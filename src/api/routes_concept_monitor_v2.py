@@ -273,14 +273,14 @@ async def refresh_momentum_signals(_: None = Depends(verify_api_key)):
     """
     try:
         import subprocess
-        import os
+        import sys
 
         # 获取项目根目录
         project_root = Path(__file__).parent.parent.parent
 
-        # 运行更新脚本
+        # 触发一次板块数据重建（输出 latest.json）
         subprocess.Popen(
-            ["python", str(project_root / "scripts" / "force_update_monitor.py")],
+            [sys.executable, str(project_root / "scripts" / "monitor_no_flask.py"), "--once"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             cwd=str(project_root)
@@ -288,7 +288,7 @@ async def refresh_momentum_signals(_: None = Depends(verify_api_key)):
 
         return {
             "success": True,
-            "message": "后台更新已触发，请等待5-10秒后刷新页面查看新数据"
+            "message": "后台更新已触发，请等待1-3分钟后刷新页面查看新数据"
         }
 
     except Exception as e:

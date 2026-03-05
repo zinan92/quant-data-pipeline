@@ -26,8 +26,8 @@ class SectorMonitor:
         self.watch_list = watch_list or []
         self.top_n = top_n
         self.update_interval = update_interval
-        self.output_dir = Path('/Users/park/a-share-data/docs/monitor')
-        self.output_dir.mkdir(exist_ok=True)
+        self.output_dir = Path(__file__).resolve().parent.parent / "data" / "monitor"
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
         # 历史数据记录
         self.history = []

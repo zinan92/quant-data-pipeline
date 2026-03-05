@@ -39,6 +39,24 @@ logger = logging.getLogger(__name__)
 DATA_DIR = project_root / "data"
 CSV_FILE = DATA_DIR / "etf_daily_summary.csv"
 BACKUP_FILE = DATA_DIR / "etf_daily_summary.csv.bak"
+REQUIRED_COLUMNS = [
+    "ETF名称",
+    "Ticker",
+    "当日涨幅(%)",
+    "成交额(亿)",
+    "总市值(亿)",
+    "资金流入流出(亿)",
+    "流入占总值比(%)",
+    "TOP3持仓",
+    "TOP3占比(%)",
+    "持仓数量",
+]
+TEXT_COLUMNS = ["ETF名称", "Ticker", "TOP3持仓"]
+
+try:
+    from scripts.build_etf_filtered import DEFAULT_SELECTION as _DEFAULT_SELECTION
+except Exception:
+    _DEFAULT_SELECTION = {}
 
 
 class ETFDataUpdater:
@@ -215,6 +233,49 @@ class ETFDataUpdater:
         return result
 
 
+def _fetch_etf_name_map(client: TushareClient) -> Dict[str, str]:
+    """一次性获取 ETF 名称映射，失败时返回空映射。"""
+    try:
+        df = client.pro.fund_basic(market="E", fields="ts_code,name")
+        if df is None or df.empty:
+            return {}
+        return dict(zip(df["ts_code"], df["name"]))
+    except Exception as e:
+        logger.warning(f"获取 ETF 名称映射失败，使用Ticker兜底: {e}")
+        return {}
+
+
+def bootstrap_etf_summary_csv(client: TushareClient) -> None:
+    """首跑时初始化 etf_daily_summary.csv，避免调度器因缺文件直接失败。"""
+    tickers = list(_DEFAULT_SELECTION.keys())
+    if not tickers:
+        logger.error("无法初始化 ETF CSV：未找到默认 ETF 列表")
+        raise RuntimeError("missing default ETF selection")
+
+    name_map = _fetch_etf_name_map(client)
+    rows: List[Dict[str, object]] = []
+    for ts_code in tickers:
+        rows.append(
+            {
+                "ETF名称": name_map.get(ts_code, ts_code),
+                "Ticker": ts_code,
+                "当日涨幅(%)": "",
+                "成交额(亿)": "",
+                "总市值(亿)": "",
+                "资金流入流出(亿)": "",
+                "流入占总值比(%)": "",
+                "TOP3持仓": "",
+                "TOP3占比(%)": "",
+                "持仓数量": "",
+            }
+        )
+
+    df = pd.DataFrame(rows, columns=REQUIRED_COLUMNS)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    df.to_csv(CSV_FILE, index=False, encoding="utf-8-sig")
+    logger.info(f"已初始化 ETF 汇总文件: {CSV_FILE} (rows={len(df)})")
+
+
 def main():
     """主函数"""
     # 加载环境变量
@@ -224,15 +285,28 @@ def main():
     token = os.getenv('TUSHARE_TOKEN')
     if not token:
         logger.error("未找到 TUSHARE_TOKEN 环境变量")
-        sys.exit(1)
+        return 1
 
-    # 读取现有CSV
+    points = int(os.getenv('TUSHARE_POINTS', 15000))
+    client = TushareClient(token=token, points=points)
+
+    # 读取/初始化 CSV
     if not CSV_FILE.exists():
-        logger.error(f"CSV文件不存在: {CSV_FILE}")
-        sys.exit(1)
+        logger.warning(f"CSV文件不存在，开始初始化: {CSV_FILE}")
+        bootstrap_etf_summary_csv(client)
 
     logger.info(f"读取CSV文件: {CSV_FILE}")
-    df = pd.read_csv(CSV_FILE, encoding='utf-8-sig')
+    df = pd.read_csv(
+        CSV_FILE,
+        encoding='utf-8-sig',
+        dtype={col: "string" for col in TEXT_COLUMNS},
+    )
+    # 老文件自动补齐缺失列
+    for col in REQUIRED_COLUMNS:
+        if col not in df.columns:
+            df[col] = ""
+    for col in TEXT_COLUMNS:
+        df[col] = df[col].astype("string").fillna("")
     logger.info(f"共 {len(df)} 条ETF记录")
 
     # 统计缺失数据
@@ -243,20 +317,19 @@ def main():
 
     if missing_mv == 0 and missing_holding == 0:
         logger.info("所有数据已完整，无需更新")
-        return
+        return 0
 
     # 备份原文件
     logger.info(f"备份原文件到: {BACKUP_FILE}")
     df.to_csv(BACKUP_FILE, index=False, encoding='utf-8-sig')
 
-    # 初始化客户端
-    points = int(os.getenv('TUSHARE_POINTS', 15000))
-    client = TushareClient(token=token, points=points)
+    # 初始化补全器
     updater = ETFDataUpdater(client)
 
     # 更新数据
     updated_count = 0
     error_count = 0
+    updated_cells = 0
 
     for idx, row in df.iterrows():
         try:
@@ -274,6 +347,8 @@ def main():
             # 更新DataFrame
             for col, val in result.items():
                 if val != '' and not pd.isna(val):
+                    if str(df.at[idx, col]) != str(val):
+                        updated_cells += 1
                     df.at[idx, col] = val
 
             updated_count += 1
@@ -311,7 +386,11 @@ def main():
     final_missing_holding = df['TOP3持仓'].isna().sum() + (df['TOP3持仓'] == '').sum()
     logger.info(f"剩余缺失总市值: {final_missing_mv} 条")
     logger.info(f"剩余缺失持仓: {final_missing_holding} 条")
+    if updated_cells == 0 and (missing_mv > 0 or missing_holding > 0):
+        logger.error("本轮未更新任何有效字段，视为失败")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

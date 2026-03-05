@@ -8,7 +8,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import json
 from datetime import datetime
 
-SIGNALS_FILE = Path('/Users/park/a-share-data/docs/monitor/momentum_signals.json')
+MONITOR_DIR = Path(__file__).resolve().parent.parent / "data" / "monitor"
+SIGNALS_FILE = MONITOR_DIR / "momentum_signals.json"
+MONITOR_DIR.mkdir(parents=True, exist_ok=True)
 
 print("=" * 60)
 print("更新动量信号数据")

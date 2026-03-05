@@ -26,8 +26,9 @@ try:
     print(f"   ✅ 成功获取 {len(df_cons)} 只成分股")
 
     print("\n3. 检查数据文件状态...")
-    output_file = Path('/Users/park/a-share-data/docs/monitor/latest.json')
-    signals_file = Path('/Users/park/a-share-data/docs/monitor/momentum_signals.json')
+    monitor_dir = Path(__file__).resolve().parent.parent / "data" / "monitor"
+    output_file = monitor_dir / "latest.json"
+    signals_file = monitor_dir / "momentum_signals.json"
 
     if output_file.exists():
         import json

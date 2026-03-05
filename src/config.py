@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class SchedulerConfig(BaseModel):
-    daily_refresh_cron: str = "30 15 * * 1-5"  # 15:30 each trading day (Asia/Shanghai)
+    daily_refresh_cron: str = "10 18 * * 1-5"  # 18:10 each trading day (Asia/Shanghai)
     timezone: str = "Asia/Shanghai"
 
 

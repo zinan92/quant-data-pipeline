@@ -11,8 +11,9 @@
 
 import sys
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import csv
+import pandas as pd
 
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
@@ -39,6 +40,63 @@ def load_super_category_map() -> dict[str, str]:
             if industry and super_category:
                 lookup[industry] = super_category
     return lookup
+
+
+def fetch_moneyflow_with_fallback(
+    client: TushareClient,
+    preferred_date: str,
+    lookback_days: int = 5,
+):
+    """
+    获取行业资金流向，若首选交易日无数据则回退到最近有数据交易日。
+
+    Returns:
+        (selected_trade_date, dataframe)
+    """
+    candidates: list[str] = [preferred_date]
+
+    try:
+        start = (
+            datetime.strptime(preferred_date, "%Y%m%d")
+            - timedelta(days=max(lookback_days * 3, 7))
+        ).strftime("%Y%m%d")
+        cal_df = client.fetch_trade_calendar(
+            exchange="SSE",
+            start_date=start,
+            end_date=preferred_date,
+        )
+        if not cal_df.empty:
+            open_days = sorted(
+                [
+                    d
+                    for d in cal_df[cal_df["is_open"] == 1]["cal_date"].tolist()
+                    if d <= preferred_date
+                ],
+                reverse=True,
+            )
+            for day in open_days:
+                if day not in candidates:
+                    candidates.append(day)
+    except Exception as e:
+        print(f"   ⚠️ 获取交易日历失败，使用默认回退策略: {e}")
+
+    # 避免回退尝试过多导致耗时过长
+    candidates = candidates[: lookback_days + 1]
+
+    for trade_date in candidates:
+        try:
+            df = client.fetch_ths_industry_moneyflow(trade_date=trade_date)
+        except Exception as e:
+            print(f"   ⚠️ 获取 {trade_date} 失败: {e}")
+            continue
+
+        if not df.empty:
+            return trade_date, df
+
+        print(f"   ⚠️ {trade_date} 无行业资金流向数据，继续回退...")
+
+    # 兜底：返回空结果，交由上层统一判错
+    return preferred_date, pd.DataFrame()
 
 
 def get_latest_candles_map(session, tickers: list[str]) -> dict[str, list]:
@@ -191,13 +249,20 @@ def main():
         latest_date = client.get_latest_trade_date()
         print(f"   最新交易日: {latest_date}")
 
-        # 2. 获取同花顺行业资金流向数据
+        # 2. 获取同花顺行业资金流向数据（自动回退交易日）
         print("\n2. 获取同花顺行业资金流向数据...")
-        df = client.fetch_ths_industry_moneyflow(trade_date=latest_date)
+        selected_trade_date, df = fetch_moneyflow_with_fallback(
+            client=client,
+            preferred_date=latest_date,
+            lookback_days=5,
+        )
 
         if df.empty:
             print("❌ 未获取到数据")
             return 1
+
+        if selected_trade_date != latest_date:
+            print(f"   ⚠️ 使用回退交易日: {selected_trade_date} (原始: {latest_date})")
 
         print(f"   ✓ 获取到 {len(df)} 个行业板块")
 
@@ -254,7 +319,7 @@ def main():
             # 检查是否已存在
             existing = session.query(IndustryDaily).filter(
                 IndustryDaily.ts_code == ts_code,
-                IndustryDaily.trade_date == latest_date
+                IndustryDaily.trade_date == selected_trade_date
             ).first()
 
             if existing:
@@ -277,7 +342,7 @@ def main():
             else:
                 # 新增
                 record = IndustryDaily(
-                    trade_date=latest_date,
+                    trade_date=selected_trade_date,
                     ts_code=ts_code,
                     industry=industry_name,
                     close=float(row['close']),
@@ -311,7 +376,7 @@ def main():
         print(f"新增记录: {saved_count}")
         print(f"更新记录: {updated_count}")
         print(f"股票行业更新: {stock_industry_updated} 只")
-        print(f"数据日期: {latest_date}")
+        print(f"数据日期: {selected_trade_date}")
 
         return 0
 

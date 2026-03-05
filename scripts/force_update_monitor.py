@@ -9,8 +9,9 @@ import akshare as ak
 import json
 from datetime import datetime
 
-OUTPUT_DIR = Path('/Users/park/a-share-data/docs/monitor')
+OUTPUT_DIR = Path(__file__).resolve().parent.parent / "data" / "monitor"
 OUTPUT_FILE = OUTPUT_DIR / 'latest.json'
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 print("=" * 60)
 print("强制更新监控数据")

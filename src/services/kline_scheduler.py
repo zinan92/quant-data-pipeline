@@ -9,19 +9,53 @@ K线数据定时调度器
 """
 
 import asyncio
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from typing import Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from src.models import TradeCalendar
+from src.models import Kline, KlineTimeframe, SymbolType, TradeCalendar
 from src.services.kline_updater import KlineUpdater
 from src.services.data_consistency_validator import DataConsistencyValidator
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _normalize_date(date_value: datetime | str | None) -> str | None:
+    """Normalize DB date/datetime value into YYYY-MM-DD string."""
+    if date_value is None:
+        return None
+    if isinstance(date_value, str):
+        return date_value[:10]
+    return date_value.strftime("%Y-%m-%d")
+
+
+def should_run_startup_backfill(
+    *,
+    now: datetime,
+    expected_trade_date: str | None,
+    latest_index_date: str | None,
+    latest_stock_date: str | None,
+    min_hour: int = 18,
+) -> bool:
+    """
+    Decide whether startup backfill should run.
+
+    We only backfill after a configurable evening cutoff, and only when
+    index/stock day data is behind the expected trading date.
+    """
+    if expected_trade_date is None:
+        return False
+    if now.hour < min_hour:
+        return False
+    if latest_index_date is None or latest_stock_date is None:
+        return True
+    return latest_index_date < expected_trade_date or latest_stock_date < expected_trade_date
 
 
 class KlineScheduler:
@@ -41,7 +75,7 @@ class KlineScheduler:
             session: 数据库会话（必需）
         """
         self.session = session
-        self.scheduler = AsyncIOScheduler()
+        self.scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
 
         # 使用工厂方法创建服务
         self.updater = KlineUpdater.create_with_session(self.session)
@@ -236,6 +270,52 @@ class KlineScheduler:
         except Exception as e:
             logger.exception(f"数据一致性验证失败: {e}")
 
+    async def _job_startup_backfill(self):
+        """应用启动后的自愈补跑任务，避免错过收盘后日线更新窗口。"""
+        now = datetime.now()
+        if not self.is_trading_day(now):
+            logger.info("启动补跑检查：非交易日，跳过")
+            return
+
+        expected_trade_date = now.strftime("%Y-%m-%d")
+        latest_index_date = self._latest_daily_trade_date(SymbolType.INDEX)
+        latest_stock_date = self._latest_daily_trade_date(SymbolType.STOCK)
+
+        if not should_run_startup_backfill(
+            now=now,
+            expected_trade_date=expected_trade_date,
+            latest_index_date=latest_index_date,
+            latest_stock_date=latest_stock_date,
+        ):
+            logger.info(
+                "启动补跑检查：无需补跑 (expected=%s, index=%s, stock=%s)",
+                expected_trade_date,
+                latest_index_date,
+                latest_stock_date,
+            )
+            return
+
+        logger.warning(
+            "启动补跑触发: expected=%s, index=%s, stock=%s",
+            expected_trade_date,
+            latest_index_date,
+            latest_stock_date,
+        )
+        await self._job_daily_update()
+        await self._job_all_stock_daily()
+
+    def _latest_daily_trade_date(self, symbol_type: SymbolType) -> str | None:
+        """Read latest DAY kline date for a symbol type."""
+        latest = (
+            self.session.query(func.max(Kline.trade_time))
+            .filter(
+                Kline.symbol_type == symbol_type,
+                Kline.timeframe == KlineTimeframe.DAY,
+            )
+            .scalar()
+        )
+        return _normalize_date(latest)
+
     # ==================== 调度器控制 ====================
 
     def start(self):
@@ -246,13 +326,16 @@ class KlineScheduler:
 
         logger.info("正在启动K线数据调度器...")
 
-        # 1. 每日更新任务 (交易日 16:00, 给新浪API足够时间合并日线)
+        # 1. 每日更新任务 (交易日 18:05，规避收盘后数据落库延迟)
         self.scheduler.add_job(
             self._job_daily_update,
-            CronTrigger(hour=16, minute=0),
+            CronTrigger(hour=18, minute=5),
             id="daily_update",
             name="每日K线更新",
             replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=7200,
         )
 
         # 2. 30分钟更新任务 (交易时间每30分钟)
@@ -263,6 +346,8 @@ class KlineScheduler:
             id="30m_update",
             name="30分钟K线更新",
             replace_existing=True,
+            coalesce=True,
+            max_instances=1,
         )
 
         # 3. 交易日历更新 (每天 00:01)
@@ -272,6 +357,8 @@ class KlineScheduler:
             id="calendar_update",
             name="交易日历更新",
             replace_existing=True,
+            coalesce=True,
+            max_instances=1,
         )
 
         # 4. 数据清理任务 (每周日 00:00)
@@ -281,24 +368,53 @@ class KlineScheduler:
             id="cleanup",
             name="旧数据清理",
             replace_existing=True,
+            coalesce=True,
+            max_instances=1,
         )
 
-        # 5. 全市场日线更新任务 (交易日 16:00)
+        # 5. 全市场日线更新任务 (交易日 18:20)
         self.scheduler.add_job(
             self._job_all_stock_daily,
-            CronTrigger(hour=16, minute=0),
+            CronTrigger(hour=18, minute=20),
             id="all_stock_daily",
             name="全市场日线更新",
             replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=7200,
         )
 
-        # 6. 数据一致性验证任务 (交易日 15:45)
+        # 5.1 兜底补跑（交易日 21:30）
+        self.scheduler.add_job(
+            self._job_all_stock_daily,
+            CronTrigger(hour=21, minute=30),
+            id="all_stock_daily_retry",
+            name="全市场日线补跑",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=7200,
+        )
+
+        # 6. 数据一致性验证任务 (交易日 20:45)
         self.scheduler.add_job(
             self._job_data_validation,
-            CronTrigger(hour=15, minute=45),
+            CronTrigger(hour=20, minute=45),
             id="data_validation",
             name="数据一致性验证",
             replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+        )
+
+        # 7. 启动后一次性补跑检查（延迟20秒，避免和启动峰值争用）
+        self.scheduler.add_job(
+            self._job_startup_backfill,
+            DateTrigger(run_date=datetime.now() + timedelta(seconds=20)),
+            id="startup_backfill_check",
+            name="启动补跑检查",
+            replace_existing=True,
+            max_instances=1,
         )
 
         self.scheduler.start()

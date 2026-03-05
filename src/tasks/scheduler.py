@@ -4,7 +4,10 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from src.config import get_settings
+from src.tasks.task_runner import run_script
+from src.utils.alerting import get_alert_manager
 from src.utils.logging import LOGGER
+from src.utils.retry import RetryConfig, with_retry
 
 # Import script main functions
 import sys
@@ -14,6 +17,12 @@ from pathlib import Path
 scripts_dir = Path(__file__).parent.parent.parent / "scripts"
 if str(scripts_dir) not in sys.path:
     sys.path.insert(0, str(scripts_dir))
+
+_SCHEDULER_RETRY = RetryConfig(
+    max_retries=3,
+    base_delay=10.0,
+    backoff_factor=2.0,
+)
 
 
 class SchedulerManager:
@@ -43,6 +52,26 @@ class SchedulerManager:
             trigger=cron,
             id="daily-refresh",
             replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=7200,
+        )
+
+        # Second evening window for resilience: if first post-close run was missed
+        # due restart/provider lag, run once more later the same night.
+        self.scheduler.add_job(
+            self._refresh_watchlist_job,
+            trigger=CronTrigger(
+                hour=20,
+                minute=30,
+                day_of_week="mon-fri",
+                timezone=self.settings.scheduler.timezone,
+            ),
+            id="daily-refresh-retry",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=7200,
         )
 
         # ── Perception pipeline scans ────────────────────────────────
@@ -96,132 +125,98 @@ class SchedulerManager:
         try:
             pipeline = PerceptionPipeline()
             loop.run_until_complete(pipeline.start())
-            result = loop.run_until_complete(pipeline.scan())
-            loop.run_until_complete(pipeline.stop())
-            LOGGER.info(
-                "Perception scan: %d events, %d signals, %.0fms",
-                result.events_fetched,
-                result.signals_detected,
-                result.duration_ms,
-            )
+            try:
+                result = loop.run_until_complete(pipeline.scan())
+                LOGGER.info(
+                    "Perception scan: %d events, %d signals, %.0fms",
+                    result.events_fetched,
+                    result.signals_detected,
+                    result.duration_ms,
+                )
+            finally:
+                loop.run_until_complete(pipeline.stop())
         except Exception as e:
             LOGGER.error("Perception scan failed: %s", e)
+            get_alert_manager().emit("warning", "scheduler.perception", str(e))
         finally:
             loop.close()
 
     def _refresh_watchlist_job(self) -> None:
         LOGGER.info("Scheduled refresh kicked off")
 
+        alerts = get_alert_manager()
+
         # Update industry and super category data
         LOGGER.info("Updating industry daily data...")
         try:
-            self._update_industry_data()
+            with_retry(
+                self._update_industry_data,
+                config=_SCHEDULER_RETRY,
+                label="industry_daily",
+            )
         except Exception as e:
-            LOGGER.error(f"Failed to update industry data: {e}")
+            LOGGER.error("Failed to update industry data after retries: %s", e)
+            alerts.emit("error", "scheduler.industry", str(e))
 
         LOGGER.info("Updating concept daily data...")
         try:
-            self._update_concept_data()
+            with_retry(
+                self._update_concept_data,
+                config=_SCHEDULER_RETRY,
+                label="concept_daily",
+            )
         except Exception as e:
-            LOGGER.error(f"Failed to update concept data: {e}")
+            LOGGER.error("Failed to update concept data after retries: %s", e)
+            alerts.emit("error", "scheduler.concept", str(e))
 
         LOGGER.info("Updating ETF kline and flow data...")
         try:
-            self._update_etf_data()
+            with_retry(
+                self._update_etf_data,
+                config=_SCHEDULER_RETRY,
+                label="etf_daily",
+            )
         except Exception as e:
-            LOGGER.error(f"Failed to update ETF data: {e}")
+            LOGGER.error("Failed to update ETF data after retries: %s", e)
+            alerts.emit("error", "scheduler.etf", str(e))
+
+    def _run_script_checked(self, script_name: str, *, timeout: int) -> None:
+        """Run script and convert non-zero exit into exceptions for retry pipeline."""
+        result = run_script(script_name, timeout=timeout)
+        if not result.success:
+            stderr = result.stderr[:400] if result.stderr else "no stderr"
+            raise RuntimeError(
+                f"{script_name} failed (exit={result.exit_code}, {result.duration_seconds:.1f}s): {stderr}"
+            )
 
     def _update_industry_data(self) -> None:
-        """Update industry daily data"""
-        try:
-            from scripts.update_industry_daily import main as update_industry_main
-            result = update_industry_main()
-            if result != 0:
-                LOGGER.error("Industry update failed")
-            else:
-                LOGGER.info("Industry update completed successfully")
-        except Exception as e:
-            LOGGER.error(f"Industry update exception: {e}", exc_info=True)
+        """Update industry daily data."""
+        self._run_script_checked("update_industry_daily.py", timeout=1800)
+        LOGGER.info("Industry update completed successfully")
 
     def _update_concept_data(self) -> None:
-        """Update concept daily data (AKShare - runs in background)"""
-        try:
-            import subprocess
-            import sys
-            from pathlib import Path
-            script_path = Path(__file__).parent.parent.parent / "scripts" / "update_concept_daily.py"
-            log_path = Path(__file__).parent.parent.parent / "logs" / "concept_daily.log"
-            log_path.parent.mkdir(exist_ok=True)
-
-            # Run in background since it takes ~6 minutes
-            with open(log_path, "w") as log_file:
-                subprocess.Popen(
-                    [sys.executable, str(script_path)],
-                    stdout=log_file,
-                    stderr=subprocess.STDOUT,
-                    start_new_session=True,
-                )
-            LOGGER.info("Concept daily update started in background")
-        except Exception as e:
-            LOGGER.error(f"Concept daily update exception: {e}", exc_info=True)
+        """Update concept daily data (AKShare - runs with timeout monitoring)."""
+        self._run_script_checked("update_concept_daily.py", timeout=900)
+        LOGGER.info("Concept daily update completed successfully")
 
     def _update_etf_data(self) -> None:
-        """Update ETF kline and flow data"""
-        # 0. Refresh the raw ETF daily summary so downstream scripts see latest data
+        """Update ETF kline and flow data."""
         LOGGER.info("Updating ETF daily summary...")
-        try:
-            from scripts.update_etf_daily_summary import main as update_etf_summary_main
-            result = update_etf_summary_main()
-            if result != 0:
-                LOGGER.error("ETF daily summary update failed")
-                return
-            LOGGER.info("ETF daily summary update completed successfully")
-        except Exception as e:
-            LOGGER.error(f"ETF daily summary update exception: {e}", exc_info=True)
-            return
+        self._run_script_checked("update_etf_daily_summary.py", timeout=2400)
+        LOGGER.info("ETF daily summary update completed successfully")
 
-        # 0.1 Build curated filtered snapshot for the dashboard and downstream scripts
         LOGGER.info("Building curated ETF filtered snapshot...")
-        try:
-            from scripts.build_etf_filtered import main as build_etf_filtered_main
-            build_etf_filtered_main()
-            LOGGER.info("ETF filtered snapshot build completed successfully")
-        except Exception as e:
-            LOGGER.error(f"ETF filtered snapshot build exception: {e}", exc_info=True)
-            return
+        self._run_script_checked("build_etf_filtered.py", timeout=300)
+        LOGGER.info("ETF filtered snapshot build completed successfully")
 
-        # 0.2 Update ETF daily fund flow from akshare
         LOGGER.info("Updating ETF daily fund flow...")
-        try:
-            from scripts.update_etf_daily_flow import main as update_etf_flow_main
-            result = update_etf_flow_main()
-            if result != 0:
-                LOGGER.error("ETF daily flow update failed")
-            else:
-                LOGGER.info("ETF daily flow update completed successfully")
-        except Exception as e:
-            LOGGER.error(f"ETF daily flow update exception: {e}", exc_info=True)
+        self._run_script_checked("update_etf_daily_flow.py", timeout=1800)
+        LOGGER.info("ETF daily flow update completed successfully")
 
-        # 1. Download ETF klines and calculate trend indicators
         LOGGER.info("Downloading ETF klines...")
-        try:
-            from scripts.download_etf_klines import main as download_etf_klines_main
-            result = download_etf_klines_main()
-            if result != 0:
-                LOGGER.error("ETF kline download failed")
-            else:
-                LOGGER.info("ETF kline download completed successfully")
-        except Exception as e:
-            LOGGER.error(f"ETF kline download exception: {e}", exc_info=True)
+        self._run_script_checked("download_etf_klines.py", timeout=1800)
+        LOGGER.info("ETF kline download completed successfully")
 
-        # 2. Calculate 7d/30d fund flow history
         LOGGER.info("Calculating ETF fund flow history...")
-        try:
-            from scripts.calc_etf_flow_history import main as calc_etf_flow_history_main
-            result = calc_etf_flow_history_main()
-            if result != 0:
-                LOGGER.error("ETF flow calculation failed")
-            else:
-                LOGGER.info("ETF flow calculation completed successfully")
-        except Exception as e:
-            LOGGER.error(f"ETF flow calculation exception: {e}", exc_info=True)
+        self._run_script_checked("calc_etf_flow_history.py", timeout=1800)
+        LOGGER.info("ETF flow calculation completed successfully")

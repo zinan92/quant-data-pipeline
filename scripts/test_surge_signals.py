@@ -12,7 +12,7 @@ import json
 from datetime import datetime
 
 # 读取现有的signals文件
-SIGNALS_FILE = Path('/Users/park/a-share-data/docs/monitor/momentum_signals.json')
+SIGNALS_FILE = Path(__file__).resolve().parent.parent / "data" / "monitor" / "momentum_signals.json"
 
 with open(SIGNALS_FILE, 'r', encoding='utf-8') as f:
     data = json.load(f)

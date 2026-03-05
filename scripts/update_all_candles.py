@@ -3,52 +3,26 @@
 
 import sys
 from pathlib import Path
+import asyncio
 
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.database import SessionLocal
-from src.models import SymbolMetadata, Timeframe
-from src.services.data_pipeline import MarketDataService
-from src.utils.logging import LOGGER
+from src.services.kline_updater import KlineUpdater
 
 def main():
     print("=" * 60)
-    print("  更新所有股票K线数据")
+    print("  更新全市场股票日线数据")
     print("=" * 60)
 
     session = SessionLocal()
 
     try:
-        # 获取所有股票
-        symbols = session.query(SymbolMetadata).all()
-        tickers = [s.ticker for s in symbols]
-
-        print(f"\n找到 {len(tickers)} 个股票")
-        print("开始更新日线数据...")
-
-        # 使用data_pipeline服务更新
-        service = MarketDataService()
-
-        # 分批更新，避免一次性更新太多
-        BATCH_SIZE = 100
-        total_batches = (len(tickers) + BATCH_SIZE - 1) // BATCH_SIZE
-
-        for i in range(0, len(tickers), BATCH_SIZE):
-            batch = tickers[i:i + BATCH_SIZE]
-            batch_num = i // BATCH_SIZE + 1
-
-            print(f"\n[批次 {batch_num}/{total_batches}] 更新 {len(batch)} 个股票...")
-
-            try:
-                service.refresh_universe(
-                    tickers=batch,
-                    timeframes=[Timeframe.DAY]
-                )
-                print(f"  ✅ 批次 {batch_num} 完成")
-            except Exception as e:
-                print(f"  ❌ 批次 {batch_num} 失败: {e}")
-                continue
+        updater = KlineUpdater.create_with_session(session)
+        print("\n开始执行全市场日线更新...")
+        updated = asyncio.run(updater.update_all_stock_daily())
+        print(f"\n  ✅ 完成，写入/更新 {updated} 条K线")
 
         print("\n" + "=" * 60)
         print("  ✅ 更新完成！")
