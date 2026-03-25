@@ -1,0 +1,82 @@
+{
+  "featureId": "backfill-verification-and-scheduler",
+  "reviewedAt": "2026-03-26T01:30:00.000Z",
+  "commitId": "227c200875141290e8bce502e58ada06abbbcb05",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The implementation creates a comprehensive backfill verification script (scripts/verify_backfill.py, 515 lines) and thorough test suite (tests/test_verify_backfill.py, 321 lines). The verification script covers all four required checks: stock kline counts, index kline counts, OHLCV validity, and gap detection against trade_calendar. Tests verify scheduler compatibility (INDEX_LIST has 8 indices, StockUpdater reads from watchlist dynamically, no hardcoded stock lists), SQLite WAL mode, and quant-dashboard MarketReader integration. The code follows existing patterns well. Two non-blocking issues noted below.",
+    "issues": [
+      {
+        "file": "scripts/verify_backfill.py",
+        "line": 406,
+        "severity": "non_blocking",
+        "description": "log_to_database() writes status as uppercase string 'COMPLETED'/'FAILED' via raw sqlite3, but the DataUpdateStatus enum values are lowercase ('completed'/'failed'). While this doesn't cause a runtime crash (raw SQL insert bypasses SQLAlchemy enum validation), it creates inconsistent data in the data_update_log table — all other entries use lowercase values via SQLAlchemy. Should use 'completed'/'failed' to match the enum."
+      },
+      {
+        "file": "scripts/verify_backfill.py",
+        "line": 225,
+        "severity": "non_blocking",
+        "description": "OHLCV NULL check only checks open/high/low/close but not volume. The feature description says 'validates OHLCV no NULLs' — the V (volume) is omitted from the NULL check query. However, the klines table schema defines volume as NOT NULL, so this is a minor gap rather than a functional bug."
+      },
+      {
+        "file": "scripts/verify_backfill.py",
+        "line": 56,
+        "severity": "non_blocking",
+        "description": "The script uses raw sqlite3 directly instead of the project's SQLAlchemy database layer. While this works and avoids session management complexity for a standalone script, it bypasses the WAL mode pragma event listener in database.py (the raw connection won't get PRAGMA journal_mode=WAL set automatically). The log_to_database insert will still work since WAL mode is connection-level and the main db was already set to WAL, but it's an inconsistency with the project's data access patterns."
+      },
+      {
+        "file": "tests/test_verify_backfill.py",
+        "line": 256,
+        "severity": "non_blocking",
+        "description": "test_market_reader_reads_stock_klines hardcodes the absolute path '/Users/wendy/work/trading-co/ashare/data/market.db'. While this matches the production path and the test skips if the file doesn't exist, it makes the test inherently non-portable. This is consistent with MarketReader's own DEFAULT_DB_PATH though, so it's a pre-existing pattern."
+      }
+    ]
+  },
+  "codeQualityIssues": [
+    {
+      "severity": "non_blocking",
+      "description": "log_to_database() writes status as uppercase 'COMPLETED'/'FAILED' but DataUpdateStatus enum uses lowercase 'completed'/'failed', creating inconsistent data in data_update_log table.",
+      "file": "scripts/verify_backfill.py",
+      "line": 406
+    },
+    {
+      "severity": "non_blocking",
+      "description": "OHLCV NULL check omits volume (the V in OHLCV). The klines schema has volume NOT NULL so this is a minor gap, not a functional bug.",
+      "file": "scripts/verify_backfill.py",
+      "line": 225
+    },
+    {
+      "severity": "non_blocking",
+      "description": "Script uses raw sqlite3 instead of SQLAlchemy, bypassing the project's database layer and WAL mode pragma event listener.",
+      "file": "scripts/verify_backfill.py",
+      "line": 56
+    },
+    {
+      "severity": "non_blocking",
+      "description": "Test hardcodes absolute path to market.db, though this is consistent with the existing MarketReader pattern.",
+      "file": "tests/test_verify_backfill.py",
+      "line": 256
+    }
+  ],
+  "sharedStateObservations": [
+    {
+      "target": "library",
+      "description": "The environment.md file lists only 5 indices (上证指数, 深证成指, 创业板指, 科创50, 北证50) but the system now has 8 indices after the historical-backfill milestone added 沪深300, 中证500, and 中证1000. The data source documentation in environment.md is outdated.",
+      "evidence": "environment.md says '5 indices: 上证指数(000001.SH), 深证成指(399001.SZ), 创业板指(399006.SZ), 科创50(000688.SH), 北证50(899050.BJ)' but INDEX_LIST in src/services/index_updater.py now has 8 entries including 000300.SH, 000905.SH, 000852.SH."
+    },
+    {
+      "target": "library",
+      "description": "The environment.md lists stock count as '422 A-share stocks' and data range as '~2025-11-03 to 2026-03-24', but after the historical-backfill milestone the stock universe expanded to ~1000 stocks and data range extends back to ~2021. These figures are stale.",
+      "evidence": "environment.md says '422 A-share stocks with daily K-lines' and 'Data range: ~2025-11-03 to 2026-03-24'. The backfill feature description says the watchlist now has ~1000 stocks and data goes back 5 years."
+    },
+    {
+      "target": "library",
+      "description": "The architecture.md still refers to '422 stocks + 5 indices' in the system architecture diagram. Should be updated to reflect the expanded universe.",
+      "evidence": "architecture.md system diagram shows '422 stocks + 5 indices' but the system now has ~1000 stocks and 8 indices after historical-backfill."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Pass. The implementation comprehensively covers all four required verification areas: stock kline count checks, index kline count checks with all 8 indices, OHLCV validity (no NULLs, high >= low), and gap detection against trade_calendar. Tests thoroughly verify scheduler compatibility — confirming INDEX_LIST has 8 indices, StockUpdater reads from watchlist table dynamically with no hardcoded lists, and SQLite WAL mode is enabled. The quant-dashboard MarketReader integration is also tested. Four non-blocking issues identified: status enum case mismatch in log_to_database, volume omitted from OHLCV NULL check, use of raw sqlite3 instead of SQLAlchemy, and hardcoded absolute path in test. None are blocking — the script functions correctly for its verification purpose. Three shared state observations: environment.md and architecture.md still reference pre-backfill figures (5 indices / 422 stocks) instead of the current 8 indices / ~1000 stocks."
+}

@@ -33,4 +33,5 @@ TuShare Pro / Sina / THS / AKShare
 - Database operations use SQLAlchemy ORM with session management
 - Config via Pydantic Settings with env var overrides
 - Scripts in `scripts/` are standalone CLI tools
+- Backfill scripts follow a class-based pattern: `*Backfiller` class with `__init__`, `run()`, `--dry-run`, `--limit` modes, DataUpdateLog tracking, and progress logging every 50 items
 - Frontend data fetching: TanStack Query (preferred) or raw fetch+useEffect

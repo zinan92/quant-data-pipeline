@@ -1,0 +1,62 @@
+{
+  "featureId": "backfill-stock-daily",
+  "reviewedAt": "2026-03-26T00:45:00.000Z",
+  "commitId": "e39439b",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Solid implementation of stock daily backfill script with comprehensive test coverage (13 tests). Script correctly reads from watchlist, determines start dates for pre-2021 vs post-2021 IPOs, uses TushareClient.fetch_daily() with rate limiting, maps TuShare fields to klines table, uses UPSERT via KlineService.save_klines(), logs progress every 50 stocks, tracks in DataUpdateLog, handles empty/None responses gracefully, and supports --dry-run and --limit modes. Code follows existing patterns from backfill_index_daily.py closely. All 13 validation criteria mapped to this feature are addressed by the implementation.",
+    "issues": [
+      {
+        "file": "scripts/backfill_stock_daily.py",
+        "line": 508,
+        "severity": "non_blocking",
+        "description": "DataUpdateStatus is set to FAILED if ANY stock fails (including delisted/suspended stocks returning empty data). With 800+ stocks, some empty responses are expected. Consider using a threshold (e.g., >10% failures) or a PARTIAL_SUCCESS status, or at minimum not counting empty-response stocks as failures. Currently, a single legitimately delisted stock causes the entire run to be logged as FAILED."
+      },
+      {
+        "file": "scripts/backfill_stock_daily.py",
+        "line": 329,
+        "severity": "non_blocking",
+        "description": "Empty TuShare response (delisted/suspended stock) returns (False, 0) and increments fail_count, but the feature description says 'empty response = skip with warning'. Semantically, an empty response for a known-delisted stock is expected behavior, not a failure. Should return (True, 0) or have a separate skip category for empty responses."
+      },
+      {
+        "file": "tests/test_backfill_stock_daily.py",
+        "line": 341,
+        "severity": "non_blocking",
+        "description": "test_data_update_log_created_on_completion manually creates a DataUpdateLog entry instead of testing the actual create_update_log() method. This means the method's integration with SessionLocal is not tested. The test verifies the ORM model works, not the method itself."
+      },
+      {
+        "file": "scripts/backfill_stock_daily.py",
+        "line": 355,
+        "severity": "non_blocking",
+        "description": "When session is None (production mode), a new SessionLocal() is created per stock. For 800+ stocks, this means 800+ session open/close cycles. Consider batching stocks per session (e.g., 50 stocks per session) for better performance, or reusing a single session with periodic commits."
+      },
+      {
+        "file": "scripts/backfill_stock_daily.py",
+        "line": 83,
+        "severity": "suggestion",
+        "description": "get_watchlist_stocks() uses raw sqlite3 connection instead of SQLAlchemy session. While functionally correct and consistent with get_existing_data_range()'s production path, other services in the codebase typically use SQLAlchemy. Minor inconsistency with project conventions but acceptable for a standalone script."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "AGENTS.md states 'Database values are UPPERCASE: symbol_type=STOCK' but the actual SymbolType enum value is lowercase: SymbolType.STOCK.value == 'stock'. The test file at line 338 correctly documents this: 'assert kline.symbol_type.value == \"stock\"  # Enum values are lowercase'. The AGENTS.md phrasing is misleading — it should clarify that the convention is to use enum constants (SymbolType.STOCK, KlineTimeframe.DAY) rather than raw strings, and note that the stored values differ in case between enums (SymbolType stores lowercase, KlineTimeframe stores UPPERCASE).",
+      "evidence": "src/models/enums.py:18 — STOCK = 'stock' (lowercase value); src/models/enums.py:25 — DAY = 'DAY' (uppercase value). AGENTS.md says 'symbol_type=STOCK' which could mislead workers into using raw 'STOCK' strings."
+    },
+    {
+      "area": "skills",
+      "observation": "Worker followed the backend-worker skill procedure correctly: investigated existing code, wrote tests, implemented, ran full test suite (880 passed), performed manual verification with --dry-run and --limit modes, committed with descriptive message. skillFeedback confirms followedProcedure=true with no deviations.",
+      "evidence": "Handoff verification shows 7 commands run covering tests, dry-run, live run, data verification, and full suite. All passed."
+    },
+    {
+      "area": "conventions",
+      "observation": "The backfill script pattern (class-based backfiller with __init__, run(), --dry-run, --limit, DataUpdateLog tracking) is now used by at least 3 scripts (backfill_stock_daily.py, backfill_index_daily.py, backfill_concept_daily.py). This is an emergent convention that could be documented in AGENTS.md or extracted into a base class to reduce duplication.",
+      "evidence": "scripts/backfill_stock_daily.py and scripts/backfill_index_daily.py share identical patterns: StockDailyBackfiller/IndexDailyBackfiller classes, same __init__ signature, same run() flow, same DataUpdateLog creation, same progress logging."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PASS. The backfill-stock-daily feature is well-implemented with 543 lines of production code and 419 lines of tests (13 test cases). It correctly handles all 13 mapped validation criteria: 5-year date range (VAL-BACKFILL-001), sufficient row counts (VAL-BACKFILL-002), gap handling (VAL-BACKFILL-003), idempotency (VAL-BACKFILL-008), resume support (VAL-BACKFILL-009), rate limiting (VAL-BACKFILL-010), full universe coverage (VAL-BACKFILL-012), TuShare API usage (VAL-BACKFILL-013), OHLCV validity (VAL-BACKFILL-015), progress logging (VAL-BACKFILL-016), graceful error handling (VAL-BACKFILL-017), CLI entry point (VAL-BACKFILL-020), and post-2021 IPO handling (VAL-BACKFILL-021). Verified working with 2 real stocks (2528 rows inserted, data from 2021-01-04 to 2026-03-25). Non-blocking issues identified: empty-response stocks counted as failures affecting DataUpdateLog status, test for DataUpdateLog doesn't exercise the actual method, and per-stock session creation could be optimized for 800+ stock runs."
+}

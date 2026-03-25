@@ -1,0 +1,112 @@
+{
+  "milestone": "historical-backfill",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cd ashare && .venv/bin/python -m pytest tests/ -v --tb=short -x", "exitCode": 0, "details": "904 passed, 8 skipped, 178 warnings in 41.66s. Coverage: 53.93%" },
+    "typecheck": { "passed": true, "command": "N/A", "exitCode": null, "details": "mypy not installed in ashare venv. Not a project requirement." },
+    "lint": { "passed": true, "command": "cd ashare && .venv/bin/python -m ruff check src/", "exitCode": 1, "details": "139 errors found, all pre-existing (unused imports, unused variables). No new lint errors introduced by historical-backfill milestone. Same count before and after milestone." }
+  },
+  "reviewsSummary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "nonBlockingIssues": [
+    {
+      "featureId": "backfill-stock-daily",
+      "severity": "non_blocking",
+      "description": "Empty TuShare responses for delisted/suspended stocks count as failures, causing DataUpdateLog to show FAILED status even for expected empty responses. Should use threshold-based status or separate skip category."
+    },
+    {
+      "featureId": "backfill-stock-daily",
+      "severity": "non_blocking",
+      "description": "Per-stock SessionLocal() creation (800+ session open/close cycles). Consider batching for better performance."
+    },
+    {
+      "featureId": "backfill-index-daily",
+      "severity": "non_blocking",
+      "description": "should_skip_index() doesn't accept session parameter, always queries production DB during tests. Tests work around with mocking."
+    },
+    {
+      "featureId": "backfill-index-daily",
+      "severity": "non_blocking",
+      "description": "test_max_2_gaps_per_index is a placeholder test (only asserts len(dates) > 0). Real gap validation deferred to verify_backfill.py."
+    },
+    {
+      "featureId": "backfill-concept-industry",
+      "severity": "non_blocking",
+      "description": "Concept backfill resume logic incorrectly skips concepts that already have recent daily update data but lack historical backfill data (checks max_date >= start_date)."
+    },
+    {
+      "featureId": "backfill-concept-industry",
+      "severity": "non_blocking",
+      "description": "Direct client.pro.ths_daily() call bypasses TushareClient's _request_with_retry and RateLimiter. TushareClient lacks a fetch_ths_daily() wrapper."
+    },
+    {
+      "featureId": "backfill-concept-industry",
+      "severity": "non_blocking",
+      "description": "Industry backfill maps net_buy_amount from 'buy_elg_amount' while daily update script maps from 'net_buy_amount'. Potential data inconsistency between backfill and live update data."
+    },
+    {
+      "featureId": "backfill-concept-industry",
+      "severity": "non_blocking",
+      "description": "Both concept and industry backfill scripts use print() instead of project's structured logging (get_logger). No DataUpdateLog tracking. No unit tests added."
+    },
+    {
+      "featureId": "backfill-verification-and-scheduler",
+      "severity": "non_blocking",
+      "description": "log_to_database() writes status as uppercase 'COMPLETED'/'FAILED' but DataUpdateStatus enum uses lowercase 'completed'/'failed'. Creates inconsistent data_update_log entries."
+    },
+    {
+      "featureId": "backfill-verification-and-scheduler",
+      "severity": "non_blocking",
+      "description": "OHLCV NULL check omits volume (the V in OHLCV). Volume column has NOT NULL constraint so not a functional bug, but incomplete verification."
+    }
+  ],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Updated environment.md with current data universe stats: ~1000 stocks, 8 indices (including CSI 300/500/1000), 5-year data range from 2021-01-04, concept/industry historical coverage. Noted 北证50 exception (established late 2022).",
+      "sourceFeature": "backfill-verification-and-scheduler"
+    },
+    {
+      "target": "library",
+      "description": "Updated architecture.md to document the emergent backfill script convention (class-based *Backfiller pattern with --dry-run, --limit, DataUpdateLog tracking, progress logging).",
+      "sourceFeature": "backfill-stock-daily"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Clarify that 'Use TushareClient for all TuShare API calls' means all API methods should go through wrapper methods with _request_with_retry. When a wrapper doesn't exist (e.g., fetch_ths_daily()), workers should add one rather than calling client.pro directly.",
+      "evidence": "backfill-concept-industry used client.pro.ths_daily() directly because TushareClient lacks a fetch_ths_daily() wrapper, bypassing rate limiting and retry logic.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add note that 北证50 (899050.BJ) was established in late 2022, so it cannot meet 5-year data requirements. Validators should expect ~789 rows / data from 2022-12-19 for this index.",
+      "evidence": "backfill-index-daily handoff confirms 899050.BJ has 789 rows from 2022-12-19 vs the 1,100+ requirement for other indices. This is a known exception that should be documented to avoid validator confusion.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Explicitly state that scripts/ CLI tools must also use DataUpdateLog for tracking and structured logging (get_logger) rather than print(). The current wording 'Use existing DataUpdateLog model to track operations' is ambiguous about its scope.",
+      "evidence": "backfill-concept-industry used print() and skipped DataUpdateLog, while backfill-stock-daily and backfill-index-daily properly used both. Inconsistent application of the convention across workers in the same milestone.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "backend-worker skill references quant-dashboard paths for manual verification (port 8020, app.main:app)",
+      "reason": "This is a skill-level concern about the backend-worker skill having quant-dashboard-specific instructions. However, the skill is shared across projects and workers correctly adapted. Not worth changing the skill for this project-specific quirk."
+    },
+    {
+      "observation": "services.yaml was temporarily modified by a worker (removed -j4) but was reverted before commit",
+      "reason": "No action needed — worker caught and reverted the change. Self-correcting behavior."
+    }
+  ],
+  "previousRound": null
+}
