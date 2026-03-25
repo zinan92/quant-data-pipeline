@@ -1,17 +1,20 @@
 """
-Tests for CalendarUpdater cleanup retention logic.
+Tests for CalendarUpdater cleanup retention logic and trade calendar coverage.
 
 Validates:
 - Daily klines survive 400-day-old records (within 1825-day retention)
 - 30-minute klines survive 100-day-old records (within 365-day retention)
+- Trade calendar coverage spans 2021-2026 with reasonable trading day count
 """
 
 from datetime import datetime, timedelta
+from unittest.mock import MagicMock, patch
 
+import pandas as pd
 import pytest
 from sqlalchemy.orm import Session
 
-from src.models import Kline, KlineTimeframe, SymbolType
+from src.models import Kline, KlineTimeframe, SymbolType, TradeCalendar
 from src.repositories.kline_repository import KlineRepository
 from src.services.calendar_updater import CalendarUpdater
 
@@ -185,3 +188,156 @@ class TestCleanupRetentionLogic:
             db_session.query(Kline).filter(Kline.id == mins_40_id).first() is None
         ), "40-day-old 30-min should be deleted with 30-day retention"
         assert deleted_count == 2, "Both old klines should be deleted"
+
+
+class TestTradeCalendarCoverage:
+    """Test trade calendar coverage for 2021-2026."""
+
+    @patch("src.services.calendar_updater.TushareClient")
+    def test_trade_calendar_covers_2021_through_2026(
+        self, mock_tushare_client, db_session: Session
+    ):
+        """Trade calendar should span from 2021-01-01 to at least 2026-12-31."""
+        kline_repo = KlineRepository(db_session)
+        updater = CalendarUpdater(kline_repo)
+
+        # Mock TushareClient to return test data spanning 2021-2026
+        mock_client_instance = MagicMock()
+        mock_tushare_client.return_value = mock_client_instance
+
+        # Generate mock calendar data: 2021-01-01 to 2026-12-31
+        dates = pd.date_range(start="2021-01-01", end="2026-12-31", freq="D")
+        mock_df = pd.DataFrame(
+            {
+                "cal_date": [d.strftime("%Y%m%d") for d in dates],
+                # Simulate ~240 trading days per year (weekdays only, roughly)
+                "is_open": [1 if d.weekday() < 5 else 0 for d in dates],
+            }
+        )
+        mock_client_instance.fetch_trade_calendar.return_value = mock_df
+
+        # Manually inject the mocked client
+        updater._tushare_client = mock_client_instance
+
+        # Run update
+        count = updater.update_trade_calendar()
+
+        # Verify date range
+        min_date = (
+            db_session.query(TradeCalendar.date)
+            .order_by(TradeCalendar.date)
+            .first()
+        )
+        max_date = (
+            db_session.query(TradeCalendar.date)
+            .order_by(TradeCalendar.date.desc())
+            .first()
+        )
+
+        assert count > 0, "Should have inserted calendar records"
+        assert min_date[0] <= "2021-01-04", f"Min date {min_date[0]} should be <= 2021-01-04"
+        assert max_date[0] >= "2026-12-31", f"Max date {max_date[0]} should be >= 2026-12-31"
+
+    @patch("src.services.calendar_updater.TushareClient")
+    def test_trade_calendar_has_reasonable_trading_day_count(
+        self, mock_tushare_client, db_session: Session
+    ):
+        """Trading day count should be between 1,300 and 1,700 for 6-year span."""
+        kline_repo = KlineRepository(db_session)
+        updater = CalendarUpdater(kline_repo)
+
+        # Mock TushareClient
+        mock_client_instance = MagicMock()
+        mock_tushare_client.return_value = mock_client_instance
+
+        # Generate ~1,440 trading days (240/year × 6 years)
+        dates = pd.date_range(start="2021-01-01", end="2026-12-31", freq="D")
+        mock_df = pd.DataFrame(
+            {
+                "cal_date": [d.strftime("%Y%m%d") for d in dates],
+                "is_open": [1 if d.weekday() < 5 else 0 for d in dates],
+            }
+        )
+        mock_client_instance.fetch_trade_calendar.return_value = mock_df
+
+        updater._tushare_client = mock_client_instance
+
+        # Run update
+        updater.update_trade_calendar()
+
+        # Count trading days
+        trading_days = (
+            db_session.query(TradeCalendar)
+            .filter(TradeCalendar.is_trading_day == 1)
+            .count()
+        )
+
+        assert (
+            1300 <= trading_days <= 1700
+        ), f"Trading days {trading_days} should be between 1,300 and 1,700"
+
+    @patch("src.services.calendar_updater.TushareClient")
+    def test_update_trade_calendar_is_idempotent(
+        self, mock_tushare_client, db_session: Session
+    ):
+        """Running update_trade_calendar twice should not create duplicates."""
+        kline_repo = KlineRepository(db_session)
+        updater = CalendarUpdater(kline_repo)
+
+        # Mock TushareClient
+        mock_client_instance = MagicMock()
+        mock_tushare_client.return_value = mock_client_instance
+
+        # Mock data: 10 days
+        mock_df = pd.DataFrame(
+            {
+                "cal_date": ["20210101", "20210104", "20210105", "20210106", "20210107"],
+                "is_open": [0, 1, 1, 1, 1],
+            }
+        )
+        mock_client_instance.fetch_trade_calendar.return_value = mock_df
+
+        updater._tushare_client = mock_client_instance
+
+        # First run
+        count1 = updater.update_trade_calendar()
+        total1 = db_session.query(TradeCalendar).count()
+
+        # Second run (should update existing records, not insert new ones)
+        count2 = updater.update_trade_calendar()
+        total2 = db_session.query(TradeCalendar).count()
+
+        assert count1 == 5, "First run should process 5 records"
+        assert count2 == 5, "Second run should process 5 records"
+        assert total1 == total2, "Total count should remain the same (no duplicates)"
+        assert total1 == 5, "Should have exactly 5 unique date records"
+
+    @patch("src.services.calendar_updater.TushareClient")
+    def test_update_trade_calendar_uses_correct_date_range(
+        self, mock_tushare_client, db_session: Session
+    ):
+        """update_trade_calendar should request data from 2021 to next year."""
+        kline_repo = KlineRepository(db_session)
+        updater = CalendarUpdater(kline_repo)
+
+        # Mock TushareClient
+        mock_client_instance = MagicMock()
+        mock_tushare_client.return_value = mock_client_instance
+
+        # Mock empty response
+        mock_df = pd.DataFrame(columns=["cal_date", "is_open"])
+        mock_client_instance.fetch_trade_calendar.return_value = mock_df
+
+        updater._tushare_client = mock_client_instance
+
+        # Run update
+        updater.update_trade_calendar()
+
+        # Verify fetch_trade_calendar was called with correct parameters
+        current_year = datetime.now().year
+        expected_start = "20210101"
+        expected_end = f"{current_year + 1}1231"
+
+        mock_client_instance.fetch_trade_calendar.assert_called_once_with(
+            start_date=expected_start, end_date=expected_end
+        )

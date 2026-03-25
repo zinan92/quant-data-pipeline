@@ -58,11 +58,12 @@ class CalendarUpdater:
         self.kline_repo.session.commit()
 
     def update_trade_calendar(self) -> int:
-        """更新交易日历 (Tushare)"""
+        """更新交易日历 (Tushare) - 从2021年到明年"""
         logger.info("更新交易日历...")
         try:
+            # 固定从2021年开始，到明年结束，确保覆盖5年历史数据
             current_year = datetime.now().year
-            start_date = f"{current_year}0101"
+            start_date = "20210101"
             end_date = f"{current_year + 1}1231"
 
             df = self.tushare_client.fetch_trade_calendar(
