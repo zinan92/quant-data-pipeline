@@ -1,0 +1,21 @@
+commands:
+  install: cd /Users/wendy/work/trading-co/ashare && .venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+  test: cd /Users/wendy/work/trading-co/ashare && .venv/bin/python -m pytest tests/ -v --tb=short -j4
+  typecheck: echo "No typecheck configured for backend Python"
+  lint: cd /Users/wendy/work/trading-co/ashare && .venv/bin/python -m ruff check src/ scripts/ tests/
+  frontend_build: cd /Users/wendy/work/trading-co/ashare/frontend && npm run build
+
+services:
+  backend:
+    start: cd /Users/wendy/work/trading-co/ashare && .venv/bin/python -m uvicorn web.app:create_app --factory --port 8000
+    stop: lsof -ti :8000 | xargs kill
+    healthcheck: curl -sf http://localhost:8000/api/status
+    port: 8000
+    depends_on: []
+
+  frontend:
+    start: cd /Users/wendy/work/trading-co/ashare/frontend && npm run dev -- --port 5173
+    stop: lsof -ti :5173 | xargs kill
+    healthcheck: curl -sf http://localhost:5173
+    port: 5173
+    depends_on: [backend]
