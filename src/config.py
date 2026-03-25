@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     logs_dir: Path = Field(default=Path("logs"), alias="LOGS_DIR")
 
     default_symbols_str: str = Field(default="", alias="DEFAULT_SYMBOLS")
-    candle_lookback: int = Field(default=120, alias="CANDLE_LOOKBACK")
+    candle_lookback: int = Field(default=1250, alias="CANDLE_LOOKBACK")
 
     cors_allow_origins_str: str = Field(default="http://localhost:5173", alias="ALLOW_ORIGINS")
 

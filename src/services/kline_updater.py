@@ -170,9 +170,9 @@ class KlineUpdater:
 
     # ==================== 数据清理 ====================
 
-    def cleanup_old_klines(self, days: int = 365) -> int:
+    def cleanup_old_klines(self, days: int = 1825, mins_days: int = 365) -> int:
         """清理过期K线数据"""
-        return self._calendar_updater.cleanup_old_klines(days)
+        return self._calendar_updater.cleanup_old_klines(days, mins_days)
 
 
 # ==================== 便捷函数 ====================

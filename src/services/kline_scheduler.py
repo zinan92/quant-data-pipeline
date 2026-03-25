@@ -222,7 +222,7 @@ class KlineScheduler:
         """每周清理旧数据 (周日 00:00 执行)"""
         logger.info("开始清理旧K线数据...")
         try:
-            self.updater.cleanup_old_klines(days=365)
+            self.updater.cleanup_old_klines(days=1825, mins_days=365)
         except Exception as e:
             logger.exception(f"数据清理失败: {e}")
 

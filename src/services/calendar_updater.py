@@ -105,23 +105,24 @@ class CalendarUpdater:
             )
             return 0
 
-    def cleanup_old_klines(self, days: int = 365) -> int:
+    def cleanup_old_klines(self, days: int = 1825, mins_days: int = 365) -> int:
         """
         清理过期K线数据
 
         Args:
-            days: 保留最近N天的数据
+            days: 保留日线最近N天的数据 (默认1825天，约5年)
+            mins_days: 保留30分钟线最近N天的数据 (默认365天)
 
         Returns:
             删除的记录数
         """
-        logger.info(f"开始清理 {days} 天前的K线数据...")
+        logger.info(f"开始清理K线数据 (日线>{days}天, 30分钟>{mins_days}天)...")
         total_deleted = 0
 
         cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
         try:
-            # 清理30分钟线 (只保留90天)
-            mins_cutoff = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+            # 清理30分钟线 (保留365天)
+            mins_cutoff = (datetime.now() - timedelta(days=mins_days)).strftime("%Y-%m-%d")
             deleted = (
                 self.kline_repo.session.query(Kline)
                 .filter(
@@ -133,7 +134,7 @@ class CalendarUpdater:
             total_deleted += deleted
             logger.info(f"  30分钟线: 删除 {deleted} 条")
 
-            # 清理日线 (保留1年)
+            # 清理日线 (保留5年)
             deleted = (
                 self.kline_repo.session.query(Kline)
                 .filter(
