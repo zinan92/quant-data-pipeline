@@ -5,10 +5,10 @@
 采集所有截面数据，输出结构化 markdown，不做分析判断。
 LLM 分析由 OpenClaw 调度 Claude Code CLI 完成。
 
-输出保存到 ~/knowledge-base/briefings/us/{YYYY-MM-DD}.md (append 模式)
+输出保存到 ~/knowledge-base/trading/daily/{YYYY-MM-DD}.md (append 模式)
 
 使用方式:
-    python3 scripts/us_briefing_v2.py
+    python3 scripts/us_briefing_enhanced.py
 """
 
 import requests
@@ -18,7 +18,7 @@ from pathlib import Path
 
 API = "http://127.0.0.1:8000"
 PARK_INTEL_BASE = "http://127.0.0.1:8001"
-BRIEFING_DIR = Path.home() / "knowledge-base" / "briefings" / "us"
+BRIEFING_DIR = Path.home() / "knowledge-base" / "trading" / "daily"
 PROJECT_ROOT = Path(__file__).parent.parent
 
 # ETF symbol → 简短中文名

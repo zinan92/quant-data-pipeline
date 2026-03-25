@@ -1,4 +1,5 @@
 import logging
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from src.config import get_settings
@@ -33,7 +34,12 @@ def configure_logging() -> None:
         format=LOG_FORMAT,
         handlers=[
             logging.StreamHandler(),
-            logging.FileHandler(log_dir / "service.log", encoding="utf-8"),
+            RotatingFileHandler(
+                log_dir / "service.log",
+                maxBytes=10 * 1024 * 1024,  # 10 MB
+                backupCount=5,
+                encoding="utf-8",
+            ),
         ],
     )
 

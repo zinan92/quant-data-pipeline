@@ -24,7 +24,7 @@ SNAPSHOT_FILE = PROJECT_ROOT / "data" / "snapshots" / "intraday" / "today_index_
 VOLUME_HISTORY_FILE = PROJECT_ROOT / "data" / "snapshots" / "daily_volume_history.json"
 SNAPSHOT_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-BRIEFING_DIR = Path.home() / "knowledge-base" / "briefings" / "ashare"
+BRIEFING_DIR = Path.home() / "knowledge-base" / "trading" / "daily"
 
 API_BASE = "http://127.0.0.1:8000"
 PARK_INTEL_BASE = "http://127.0.0.1:8001"

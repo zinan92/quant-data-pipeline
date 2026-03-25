@@ -122,14 +122,22 @@ class NewsSentimentAnalyzer:
         }
     
     def get_recent_news(self, limit: int = 50) -> List[Dict]:
-        """获取最近的新闻"""
-        # 从现有的 news API 获取
+        """获取最近的新闻 via NewsService (direct DB/API, no self-HTTP call)."""
         try:
-            import requests
-            resp = requests.get(f'http://127.0.0.1:8000/api/news/latest?limit={limit}', timeout=5)
-            if resp.ok:
-                data = resp.json()
-                return data if isinstance(data, list) else data.get('news', [])
+            from src.services.news.news_service import get_news_service
+
+            news_service = get_news_service()
+            items = news_service.fetch_news(source='cls', limit=limit)
+            # Normalize to the format expected by analyze_news()
+            return [
+                {
+                    'title': item.get('title', ''),
+                    'content': item.get('content', ''),
+                    'publish_time': item.get('time', ''),
+                    'source': item.get('source_name', item.get('source', 'unknown')),
+                }
+                for item in items
+            ]
         except Exception as e:
             logger.warning(f"Failed to fetch recent news: {e}")
         return []

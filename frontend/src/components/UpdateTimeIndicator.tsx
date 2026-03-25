@@ -86,16 +86,17 @@ export function UpdateTimeIndicator({ section, timeframe = "both" }: UpdateTimeI
   const symbolType = sectionMap[section];
 
   const renderTimeframe = (tf: "day" | "30m") => {
-    const key = `${symbolType}_${tf}`;
-    const klineData = data.kline_times[key];
+    const tfKey = tf === "day" ? "DAY" : "MINS_30";
+    const key = `${symbolType}_${tfKey}`;
+    const klineData = data.kline_times?.[key];
     const lastUpdate = klineData?.last_update;
 
     // Find next update time
     let nextUpdate: string | null = null;
     if (tf === "day") {
-      nextUpdate = data.scheduled_jobs.daily_update?.next_run || null;
+      nextUpdate = data.scheduled_jobs?.daily_update?.next_run || null;
     } else if (tf === "30m") {
-      nextUpdate = data.scheduled_jobs["30m_update"]?.next_run || null;
+      nextUpdate = data.scheduled_jobs?.["30m_update"]?.next_run || null;
     }
 
     const relativeNext = formatRelativeTime(nextUpdate);

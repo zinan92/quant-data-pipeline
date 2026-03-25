@@ -129,6 +129,7 @@ async def get_commodity_klines(
     period: str = Query("3mo", description="Period: 1mo, 3mo, 6mo, 1y"),
     interval: str = Query("1d", description="Interval: 1d, 1h, 30m, 5m"),
     limit: int = Query(0, ge=0, le=2000, description="Max klines to return (0=all)"),
+    as_of: Optional[str] = Query(None, description="ISO date cutoff for temporal filtering (e.g. 2026-02-19). Prevents look-ahead bias."),
 ):
     """Get historical klines for a commodity using yfinance"""
     VALID_SYMBOLS = {"GC=F": "Gold", "SI=F": "Silver", "HG=F": "Copper", "CL=F": "Crude Oil"}
@@ -144,6 +145,17 @@ async def get_commodity_klines(
         df = ticker.history(period=period, interval=interval)
         if df.empty:
             raise HTTPException(status_code=404, detail="No data available")
+
+        # Temporal filter: exclude data after as_of date to prevent look-ahead bias
+        if as_of:
+            try:
+                import pandas as pd
+                cutoff = pd.Timestamp(as_of, tz=df.index.tz or "UTC")
+                df = df[df.index <= cutoff]
+                if df.empty:
+                    raise HTTPException(status_code=404, detail=f"No data available before {as_of}")
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid as_of date format: {as_of}")
 
         # If limit specified, take only the last N rows
         if limit > 0 and len(df) > limit:

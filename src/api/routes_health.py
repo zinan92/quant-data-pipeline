@@ -8,6 +8,7 @@ from typing import Dict, Any
 
 import httpx
 from fastapi import APIRouter, Depends
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from src.api.dependencies import get_db
@@ -19,21 +20,18 @@ from src.utils.logging import get_logger
 logger = get_logger(__name__)
 router = APIRouter()
 
-# Internal base URL for self-calls
-_BASE = "http://127.0.0.1:8000"
-_TIMEOUT = 5.0
+# Timeout for legitimate external calls (park-intel)
+_EXTERNAL_TIMEOUT = 5.0
 
 
 async def _check_index_realtime() -> Dict[str, Any]:
-    """Check A-share index realtime data freshness."""
+    """Check A-share index realtime data freshness by calling the route handler directly."""
     try:
+        from src.api.routes_index import get_index_realtime
+
         t0 = time.monotonic()
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.get(f"{_BASE}/api/index/realtime/000001.SH")
+        data = await get_index_realtime("000001.SH")
         latency_ms = round((time.monotonic() - t0) * 1000)
-        if resp.status_code != 200:
-            return {"status": "error", "detail": f"HTTP {resp.status_code}", "latency_ms": latency_ms}
-        data = resp.json()
         return {
             "status": "ok",
             "last_update": data.get("last_update", "unknown"),
@@ -45,37 +43,35 @@ async def _check_index_realtime() -> Dict[str, Any]:
 
 
 async def _check_commodities_realtime() -> Dict[str, Any]:
-    """Check commodities realtime data freshness."""
+    """Check commodities realtime data freshness by calling the route handler directly."""
     try:
+        from src.api.routes_commodities import get_commodities_realtime
+
         t0 = time.monotonic()
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.get(f"{_BASE}/api/commodities/realtime")
+        result = await get_commodities_realtime()
         latency_ms = round((time.monotonic() - t0) * 1000)
-        if resp.status_code != 200:
-            return {"status": "error", "detail": f"HTTP {resp.status_code}", "latency_ms": latency_ms}
-        data = resp.json()
         return {
             "status": "ok",
-            "last_update": data.get("last_update", "unknown"),
-            "count": data.get("count", 0),
+            "last_update": result.last_update,
+            "count": result.count,
             "latency_ms": latency_ms,
         }
     except Exception as e:
         return {"status": "error", "detail": str(e)}
 
 
-async def _check_crypto_ws() -> Dict[str, Any]:
-    """Check crypto WebSocket data freshness."""
+def _check_crypto_ws() -> Dict[str, Any]:
+    """Check crypto WebSocket data freshness from in-memory state."""
     try:
+        from src.services.crypto_ws import get_crypto_ws_manager
+
         t0 = time.monotonic()
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.get(f"{_BASE}/api/crypto/realtime")
+        manager = get_crypto_ws_manager()
+        tickers = manager.get_all_tickers()
         latency_ms = round((time.monotonic() - t0) * 1000)
-        if resp.status_code != 200:
-            return {"status": "error", "detail": f"HTTP {resp.status_code}", "latency_ms": latency_ms}
-        data = resp.json()
-        stale_count = sum(1 for t in data.get("tickers", []) if t.get("is_stale", False))
-        total = len(data.get("tickers", []))
+
+        total = len(tickers)
+        stale_count = sum(1 for t in tickers.values() if t.is_stale)
         status = "ok" if stale_count == 0 and total > 0 else ("degraded" if total > 0 else "error")
         return {
             "status": status,
@@ -109,25 +105,47 @@ def _check_klines_db(db: Session, symbol_type: SymbolType, symbol_code: str, tim
         return {"status": "error", "detail": str(e)}
 
 
-async def _check_klines_api(url: str, label: str) -> Dict[str, Any]:
-    """Check kline data freshness via API call (for commodities/crypto)."""
-    try:
+async def _check_commodity_klines_with_timeout(symbol: str, label: str, timeout_s: float = 3.0) -> Dict[str, Any]:
+    """Check commodity kline freshness via yfinance with a hard timeout.
+    Falls back to 'unavailable' if the external API is slow — never blocks the health endpoint.
+    """
+    import asyncio
+
+    async def _fetch():
+        import yfinance as yf
         t0 = time.monotonic()
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            resp = await client.get(f"{_BASE}{url}")
+        ticker = yf.Ticker(symbol)
+        df = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: ticker.history(period="3mo", interval="1d")
+        )
         latency_ms = round((time.monotonic() - t0) * 1000)
-        if resp.status_code != 200:
-            return {"status": "error", "detail": f"HTTP {resp.status_code}", "latency_ms": latency_ms}
-        data = resp.json()
-        klines = data.get("klines", [])
+        if df.empty:
+            return {"status": "error", "detail": f"No kline data for {label}", "latency_ms": latency_ms}
+        last_date = df.index[-1].strftime("%Y-%m-%d")
+        return {"status": "ok", "latest_date": last_date, "latency_ms": latency_ms}
+
+    try:
+        return await asyncio.wait_for(_fetch(), timeout=timeout_s)
+    except asyncio.TimeoutError:
+        return {"status": "unavailable", "detail": f"{label}: yfinance timeout ({timeout_s}s)"}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
+
+
+async def _check_crypto_klines(symbol: str, interval: str, limit: int, label: str) -> Dict[str, Any]:
+    """Check crypto kline freshness by calling the service directly."""
+    try:
+        from src.services.crypto_service import get_crypto_service
+
+        t0 = time.monotonic()
+        service = get_crypto_service()
+        klines = await service.get_klines(symbol, interval, limit)
+        latency_ms = round((time.monotonic() - t0) * 1000)
         if not klines:
             return {"status": "error", "detail": f"No kline data for {label}", "latency_ms": latency_ms}
         last = klines[-1]
-        date_str = last.get("date", last.get("time", "unknown"))
-        if isinstance(date_str, str):
-            date_part = date_str[:10]
-        else:
-            date_part = str(date_str)
+        date_str = last.get("time", "unknown") if isinstance(last, dict) else str(last.time)
+        date_part = str(date_str)[:10]
         return {
             "status": "ok",
             "latest_date": date_part,
@@ -138,6 +156,51 @@ async def _check_klines_api(url: str, label: str) -> Dict[str, Any]:
         return {"status": "error", "detail": str(e)}
 
 
+@router.get("/freshness")
+async def freshness_check(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """Fast local-only freshness check for health monitoring (trading-ctl.sh, OpenClaw cron).
+
+    Only checks LOCAL state (DB, in-memory). No external API calls (yfinance, Sina).
+    Guaranteed to respond within milliseconds. Use /data or /unified for full external checks.
+    """
+    t0 = time.monotonic()
+    now = datetime.now(timezone.utc)
+    sources: Dict[str, Any] = {}
+
+    # 1. Crypto WebSocket — in-memory, instant
+    sources["crypto_ws"] = _check_crypto_ws()
+
+    # 2. Index klines from DB
+    sources["index_klines"] = _check_klines_db(
+        db, SymbolType.INDEX, "000001.SH", KlineTimeframe.DAY, "上证指数 daily"
+    )
+
+    # 3. DB connectivity check (simple query)
+    try:
+        db.execute(text("SELECT 1"))
+        sources["database"] = {"status": "ok"}
+    except Exception as e:
+        sources["database"] = {"status": "error", "detail": str(e)}
+
+    # Overall
+    statuses = [s.get("status", "error") for s in sources.values()]
+    if all(s == "ok" for s in statuses):
+        overall = "healthy"
+    elif any(s == "error" for s in statuses):
+        overall = "unhealthy"
+    else:
+        overall = "degraded"
+
+    latency_ms = round((time.monotonic() - t0) * 1000)
+
+    return {
+        "status": overall,
+        "sources": sources,
+        "latency_ms": latency_ms,
+        "timestamp": now.isoformat(),
+    }
+
+
 @router.get("/data")
 async def data_health_check(db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
@@ -146,21 +209,17 @@ async def data_health_check(db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
     checks: Dict[str, Any] = {}
 
-    # Realtime checks (async)
+    # Realtime checks
     checks["index_realtime"] = await _check_index_realtime()
     checks["commodities_realtime"] = await _check_commodities_realtime()
-    checks["crypto_ws"] = await _check_crypto_ws()
+    checks["crypto_ws"] = _check_crypto_ws()
 
     # Kline checks
     checks["index_klines"] = _check_klines_db(
         db, SymbolType.INDEX, "000001.SH", KlineTimeframe.DAY, "上证指数 daily"
     )
-    checks["commodity_klines"] = await _check_klines_api(
-        "/api/commodities/klines/GC%3DF?interval=1d", "Gold daily"
-    )
-    checks["crypto_klines"] = await _check_klines_api(
-        "/api/crypto/kline/BTC?interval=1d&limit=10", "BTC daily"
-    )
+    checks["commodity_klines"] = await _check_commodity_klines_with_timeout("GC=F", "Gold daily")
+    checks["crypto_klines"] = await _check_crypto_klines("BTC", "1d", 10, "BTC daily")
 
     # Overall status
     statuses = [c.get("status", "error") for c in checks.values()]
@@ -193,7 +252,7 @@ async def unified_health_check(db: Session = Depends(get_db)) -> Dict[str, Any]:
     quant: Dict[str, Any] = {}
     quant["index_realtime"] = await _check_index_realtime()
     quant["commodities_realtime"] = await _check_commodities_realtime()
-    quant["crypto_ws"] = await _check_crypto_ws()
+    quant["crypto_ws"] = _check_crypto_ws()
 
     # 2. Quant kline/file freshness
     freshness = get_data_freshness(db)
@@ -207,7 +266,7 @@ async def unified_health_check(db: Session = Depends(get_db)) -> Dict[str, Any]:
     qualitative: Dict[str, Any] = {}
     park_intel_url = get_settings().park_intel_url.rstrip("/")
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=_EXTERNAL_TIMEOUT) as client:
             resp = await client.get(f"{park_intel_url}/api/articles/sources")
         if resp.status_code == 200:
             for src in resp.json():
