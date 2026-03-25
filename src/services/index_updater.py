@@ -24,13 +24,16 @@ SINA_HEADERS = {
     "User-Agent": "Mozilla/5.0",
 }
 
-# 指数列表
+# 指数列表 (ts_code, sina_code, name)
 INDEX_LIST = [
-    ("000001.SH", "上证指数"),
-    ("399001.SZ", "深证成指"),
-    ("399006.SZ", "创业板指"),
-    ("000688.SH", "科创50"),
-    ("899050.BJ", "北证50"),
+    ("000001.SH", "sh000001", "上证指数"),
+    ("399001.SZ", "sz399001", "深证成指"),
+    ("399006.SZ", "sz399006", "创业板指"),
+    ("000688.SH", "sh000688", "科创50"),
+    ("899050.BJ", "bj899050", "北证50"),
+    ("000300.SH", "sh000300", "沪深300"),
+    ("000905.SH", "sh000905", "中证500"),
+    ("000852.SH", "sh000852", "中证1000"),
 ]
 
 
@@ -45,8 +48,14 @@ class IndexUpdater:
         self.kline_repo = kline_repo
         self.symbol_repo = symbol_repo
 
-    def _get_sina_code(self, ts_code: str) -> str | None:
-        """将ts_code转换为新浪代码格式"""
+    def _get_sina_code(self, ts_code: str, sina_code: str | None = None) -> str | None:
+        """
+        将ts_code转换为新浪代码格式
+        如果提供了sina_code则直接使用，否则自动转换
+        """
+        if sina_code:
+            return sina_code
+        
         code, market = ts_code.split(".")
         if market == "SH":
             return f"sh{code}"
@@ -57,7 +66,7 @@ class IndexUpdater:
         return None
 
     async def _fetch_kline(
-        self, ts_code: str, name: str, scale: int
+        self, ts_code: str, name: str, scale: int, sina_code: str | None = None
     ) -> list[dict]:
         """
         从新浪获取K线数据
@@ -66,11 +75,12 @@ class IndexUpdater:
             ts_code: 标的代码 (如 000001.SH)
             name: 标的名称
             scale: K线周期 (240=日线, 30=30分钟)
+            sina_code: 新浪代码 (可选，如不提供则自动转换)
 
         Returns:
             K线数据列表
         """
-        sina_code = self._get_sina_code(ts_code)
+        sina_code = self._get_sina_code(ts_code, sina_code)
         if not sina_code:
             return []
 
@@ -123,12 +133,12 @@ class IndexUpdater:
 
         # 并发获取所有指数数据
         tasks = [
-            self._fetch_kline(ts_code, name, scale=240)
-            for ts_code, name in INDEX_LIST
+            self._fetch_kline(ts_code, name, scale=240, sina_code=sina_code)
+            for ts_code, sina_code, name in INDEX_LIST
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        for (ts_code, name), result in zip(INDEX_LIST, results):
+        for (ts_code, sina_code, name), result in zip(INDEX_LIST, results):
             # 处理异常情况
             if isinstance(result, Exception):
                 logger.error(f"  {name}: 获取失败 - {result}")
@@ -172,12 +182,12 @@ class IndexUpdater:
 
         # 并发获取所有指数数据
         tasks = [
-            self._fetch_kline(ts_code, name, scale=30)
-            for ts_code, name in INDEX_LIST
+            self._fetch_kline(ts_code, name, scale=30, sina_code=sina_code)
+            for ts_code, sina_code, name in INDEX_LIST
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        for (ts_code, name), result in zip(INDEX_LIST, results):
+        for (ts_code, sina_code, name), result in zip(INDEX_LIST, results):
             # 处理异常情况
             if isinstance(result, Exception):
                 logger.error(f"  {name}: 获取失败 - {result}")
