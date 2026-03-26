@@ -107,3 +107,316 @@
   color: rgba(230, 237, 247, 0.5);
   font-size: 0.8rem;
 }
+
+.health-table__error {
+  color: #f87171;
+  font-size: 0.75rem;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Trade Calendar Health */
+.health-calendar {
+  display: flex;
+  gap: 2rem;
+  padding: 1rem 1.5rem;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 6px;
+}
+
+.health-calendar__item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.health-calendar__label {
+  font-size: 0.75rem;
+  color: rgba(230, 237, 247, 0.5);
+}
+
+.health-calendar__value {
+  font-size: 0.9rem;
+  font-weight: 500;
+  font-family: monospace;
+}
+
+.health-calendar__status {
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+
+.health-calendar__status--ok {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.15);
+}
+
+.health-calendar__status--warn {
+  color: #eab308;
+  background: rgba(234, 179, 8, 0.15);
+}
+
+/* Gap Detection */
+.health-gap-summary {
+  display: flex;
+  gap: 2rem;
+  padding: 1rem 1.5rem;
+  background: rgba(239, 68, 68, 0.08);
+  border-radius: 6px;
+  margin-bottom: 1rem;
+}
+
+.health-gap-summary__item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.health-gap-summary__label {
+  font-size: 0.75rem;
+  color: rgba(230, 237, 247, 0.5);
+}
+
+.health-gap-summary__value {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.health-gap-summary__value--total {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #f87171;
+}
+
+.health-gap-details {
+  margin-top: 1rem;
+}
+
+.health-gap-details__title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: rgba(230, 237, 247, 0.7);
+}
+
+.health-gap-item {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+}
+
+.health-gap-item__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.health-gap-item__header:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.health-gap-item__symbol {
+  font-weight: 500;
+  font-size: 0.85rem;
+}
+
+.health-gap-item__type {
+  color: rgba(230, 237, 247, 0.4);
+  font-size: 0.75rem;
+  margin-left: 0.5rem;
+}
+
+.health-gap-item__count {
+  font-size: 0.8rem;
+  color: #f87171;
+}
+
+.health-gap-item__toggle {
+  color: rgba(230, 237, 247, 0.5);
+  margin-left: 0.5rem;
+}
+
+.health-gap-item__dates {
+  padding: 0.5rem 0.75rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.75rem;
+  font-family: monospace;
+  color: rgba(230, 237, 247, 0.6);
+  line-height: 1.5;
+}
+
+/* Per-Stock Drill-Down */
+.health-stock-search {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.health-stock-search__input {
+  flex: 1;
+  max-width: 400px;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: #e6edf7;
+  font-size: 0.85rem;
+}
+
+.health-stock-search__input::placeholder {
+  color: rgba(230, 237, 247, 0.4);
+}
+
+.health-stock-search__count {
+  font-size: 0.75rem;
+  color: rgba(230, 237, 247, 0.5);
+}
+
+.health-stock-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 0.5rem;
+}
+
+.health-stock-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  font-size: 0.8rem;
+  transition: background 0.15s;
+}
+
+.health-stock-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.health-stock-item__code {
+  font-family: monospace;
+  font-weight: 500;
+}
+
+.health-stock-item__name {
+  color: rgba(230, 237, 247, 0.7);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.health-stock-item__indicator {
+  font-size: 1rem;
+}
+
+.health-stock-item__indicator--fresh {
+  color: #22c55e;
+}
+
+.health-stock-item__indicator--stale {
+  color: #eab308;
+}
+
+.health-stock-item__indicator--critical {
+  color: #f87171;
+}
+
+.health-stock-item__gaps {
+  font-size: 0.75rem;
+  color: rgba(230, 237, 247, 0.5);
+}
+
+/* Data Consistency */
+.health-consistency-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  color: rgba(230, 237, 247, 0.7);
+}
+
+.health-spinner {
+  font-size: 1.2rem;
+  animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.health-consistency-summary {
+  display: flex;
+  gap: 2rem;
+  padding: 1rem 1.5rem;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 6px;
+  margin-bottom: 1rem;
+}
+
+.health-consistency-summary__item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.health-consistency-summary__label {
+  font-size: 0.75rem;
+  color: rgba(230, 237, 247, 0.5);
+}
+
+.health-consistency-summary__value {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.health-consistency-summary__value--ok {
+  color: #22c55e;
+}
+
+.health-consistency-summary__value--warn {
+  color: #eab308;
+}
+
+.health-consistency-issues {
+  margin-top: 1rem;
+}
+
+.health-consistency-issues__title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: rgba(230, 237, 247, 0.7);
+}
+
+.health-consistency-issue {
+  display: flex;
+  gap: 1rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(239, 68, 68, 0.08);
+  border-left: 3px solid #f87171;
+  margin-bottom: 0.5rem;
+  border-radius: 4px;
+}
+
+.health-consistency-issue__symbol {
+  font-weight: 500;
+  font-family: monospace;
+  min-width: 100px;
+}
+
+.health-consistency-issue__detail {
+  font-size: 0.8rem;
+  color: rgba(230, 237, 247, 0.7);
+}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 interface SourceStatus {
   status?: string;
@@ -17,6 +17,61 @@ interface SourceStatus {
   exists?: boolean;
   detail?: string;
   [key: string]: unknown;
+}
+
+interface GapDetail {
+  symbol_code: string;
+  symbol_name: string;
+  symbol_type: string;
+  gap_count: number;
+  missing_dates: string[];
+}
+
+interface GapsData {
+  total_gaps: number;
+  by_type: {
+    STOCK: { symbols_with_gaps: number; total_missing_days: number };
+    INDEX: { symbols_with_gaps: number; total_missing_days: number };
+  };
+  details: GapDetail[];
+  calendar_coverage: {
+    min_date: string;
+    max_date: string;
+    trading_days: number;
+  };
+}
+
+interface FailureItem {
+  id: number;
+  update_type: string;
+  symbol_type: string;
+  timeframe: string;
+  status: string;
+  error_message: string | null;
+  started_at: string | null;
+}
+
+interface FailuresData {
+  failures: FailureItem[];
+  count: number;
+}
+
+interface ConsistencyItem {
+  symbol: string;
+  is_consistent: boolean;
+  details: string;
+}
+
+interface ConsistencyData {
+  summary: {
+    total_validated: number;
+    total_inconsistencies: number;
+    consistency_rate: number;
+    is_healthy: boolean;
+  };
+  indexes: ConsistencyItem[];
+  concepts: ConsistencyItem[];
+  inconsistencies: ConsistencyItem[];
 }
 
 interface UnifiedHealth {
@@ -157,29 +212,141 @@ function overallLabel(status: string): { text: string; cls: string } {
   return { text: "数据异常", cls: "health-overall--error" };
 }
 
+function fireStatusChangeNotification(newStatus: string) {
+  if (typeof Notification === 'undefined') return;
+  if (Notification.permission !== 'granted') return;
+  
+  const statusText = newStatus === 'degraded' ? '部分数据过期' : '数据异常';
+  new Notification('数据健康降级', {
+    body: `系统状态已变更为: ${statusText}`,
+    icon: '/favicon.ico'
+  });
+}
+
+function getOverallStatus(
+  unifiedStatus: string,
+  gaps: GapsData | null,
+  consistency: ConsistencyData | null
+): string {
+  // Start with unified status
+  let status = unifiedStatus;
+  
+  // Check gaps - if significant gaps exist, downgrade to degraded
+  if (gaps && gaps.total_gaps > 100) {
+    if (status === "healthy") status = "degraded";
+  }
+  
+  // Check consistency - if unhealthy, downgrade
+  if (consistency && !consistency.summary.is_healthy) {
+    if (status === "healthy") status = "degraded";
+  }
+  
+  return status;
+}
+
 export function HealthDashboard() {
   const [data, setData] = useState<UnifiedHealth | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // New state for additional health endpoints
+  const [gaps, setGaps] = useState<GapsData | null>(null);
+  const [gapsError, setGapsError] = useState<string | null>(null);
+  const [gapsExpanded, setGapsExpanded] = useState<Record<string, boolean>>({});
+  const [searchQuery, setSearchQuery] = useState("");
+  
+  const [failures, setFailures] = useState<FailuresData | null>(null);
+  const [failuresError, setFailuresError] = useState<string | null>(null);
+  
+  const [consistency, setConsistency] = useState<ConsistencyData | null>(null);
+  const [consistencyLoading, setConsistencyLoading] = useState(true);
+  const [consistencyError, setConsistencyError] = useState<string | null>(null);
+  
+  // Track previous status for notification
+  const previousStatus = useRef<string | null>(null);
+  const notificationPermissionRequested = useRef(false);
 
   const fetchData = useCallback(async () => {
     try {
       const resp = await fetch("/api/health/unified");
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      setData(await resp.json());
+      const unifiedData = await resp.json();
+      setData(unifiedData);
       setError(null);
+      
+      // Check for status transition and fire notification
+      if (previousStatus.current === "healthy" && 
+          (unifiedData.status === "degraded" || unifiedData.status === "unhealthy")) {
+        fireStatusChangeNotification(unifiedData.status);
+      }
+      previousStatus.current = unifiedData.status;
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setLoading(false);
     }
   }, []);
+  
+  const fetchGaps = useCallback(async () => {
+    try {
+      const resp = await fetch("/api/health/gaps");
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      setGaps(await resp.json());
+      setGapsError(null);
+    } catch (e) {
+      setGapsError((e as Error).message);
+    }
+  }, []);
+  
+  const fetchFailures = useCallback(async () => {
+    try {
+      const resp = await fetch("/api/health/failures");
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      setFailures(await resp.json());
+      setFailuresError(null);
+    } catch (e) {
+      setFailuresError((e as Error).message);
+    }
+  }, []);
+  
+  const fetchConsistency = useCallback(async () => {
+    setConsistencyLoading(true);
+    try {
+      const resp = await fetch("/api/health/consistency");
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      setConsistency(await resp.json());
+      setConsistencyError(null);
+    } catch (e) {
+      setConsistencyError((e as Error).message);
+    } finally {
+      setConsistencyLoading(false);
+    }
+  }, []);
+
+  // Request notification permission on first load
+  useEffect(() => {
+    if (!notificationPermissionRequested.current && typeof Notification !== 'undefined') {
+      Notification.requestPermission();
+      notificationPermissionRequested.current = true;
+    }
+  }, []);
 
   useEffect(() => {
+    // Fetch all data on mount and every 60s
     fetchData();
-    const id = setInterval(fetchData, 60_000);
+    fetchGaps();
+    fetchFailures();
+    fetchConsistency();
+    
+    const id = setInterval(() => {
+      fetchData();
+      fetchGaps();
+      fetchFailures();
+      fetchConsistency();
+    }, 60_000);
+    
     return () => clearInterval(id);
-  }, [fetchData]);
+  }, [fetchData, fetchGaps, fetchFailures, fetchConsistency]);
 
   if (loading && !data)
     return <div className="health-dashboard"><p>加载中...</p></div>;
@@ -187,12 +354,20 @@ export function HealthDashboard() {
     return <div className="health-dashboard"><p style={{ color: "#f87171" }}>加载失败: {error}</p></div>;
   if (!data) return null;
 
-  const overall = overallLabel(data.status);
+  // Calculate overall status considering gaps and consistency
+  const overallStatus = getOverallStatus(data.status, gaps, consistency);
+  const overall = overallLabel(overallStatus);
   const quantEntries = Object.entries(data.quant);
   const qualEntries = Object.entries(data.qualitative).filter(
     ([k]) => k !== "service_status"
   );
   const serviceStatus = data.qualitative.service_status as string;
+  
+  // Filter gap details by search query
+  const filteredGapDetails = gaps?.details.filter(detail => 
+    detail.symbol_code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    detail.symbol_name.toLowerCase().includes(searchQuery.toLowerCase())
+  ) || [];
 
   return (
     <div className="health-dashboard">
@@ -203,6 +378,224 @@ export function HealthDashboard() {
         </span>
       </div>
 
+      {/* Trade Calendar Health Section */}
+      <section className="health-section">
+        <h2 className="health-section__title">📅 交易日历健康</h2>
+        {gaps ? (
+          <div className="health-calendar">
+            <div className="health-calendar__item">
+              <span className="health-calendar__label">日期范围:</span>
+              <span className="health-calendar__value">
+                {gaps.calendar_coverage.min_date} 至 {gaps.calendar_coverage.max_date}
+              </span>
+            </div>
+            <div className="health-calendar__item">
+              <span className="health-calendar__label">交易日总数:</span>
+              <span className="health-calendar__value">{gaps.calendar_coverage.trading_days}</span>
+            </div>
+            <div className="health-calendar__item">
+              <span className="health-calendar__label">状态:</span>
+              <span className={`health-calendar__status ${gaps.calendar_coverage.trading_days >= 1300 ? 'health-calendar__status--ok' : 'health-calendar__status--warn'}`}>
+                {gaps.calendar_coverage.trading_days >= 1300 ? '✓ 正常' : '⚠ 不完整'}
+              </span>
+            </div>
+          </div>
+        ) : gapsError ? (
+          <p style={{ color: "#f87171", padding: "0.5rem 1rem" }}>加载失败: {gapsError}</p>
+        ) : (
+          <p style={{ padding: "0.5rem 1rem" }}>加载中...</p>
+        )}
+      </section>
+
+      {/* Gap Detection Section */}
+      <section className="health-section">
+        <h2 className="health-section__title">🔍 数据缺口检测</h2>
+        {gapsError ? (
+          <p style={{ color: "#f87171", padding: "0.5rem 1rem" }}>加载失败: {gapsError}</p>
+        ) : !gaps ? (
+          <p style={{ padding: "0.5rem 1rem" }}>加载中...</p>
+        ) : gaps.total_gaps === 0 ? (
+          <p style={{ color: "#22c55e", padding: "0.5rem 1rem" }}>✓ 未发现数据缺口</p>
+        ) : (
+          <>
+            <div className="health-gap-summary">
+              <div className="health-gap-summary__item">
+                <span className="health-gap-summary__label">总缺口数:</span>
+                <span className="health-gap-summary__value health-gap-summary__value--total">{gaps.total_gaps}</span>
+              </div>
+              <div className="health-gap-summary__item">
+                <span className="health-gap-summary__label">股票:</span>
+                <span className="health-gap-summary__value">
+                  {gaps.by_type.STOCK.symbols_with_gaps} 只 / {gaps.by_type.STOCK.total_missing_days} 缺失日
+                </span>
+              </div>
+              <div className="health-gap-summary__item">
+                <span className="health-gap-summary__label">指数:</span>
+                <span className="health-gap-summary__value">
+                  {gaps.by_type.INDEX.symbols_with_gaps} 只 / {gaps.by_type.INDEX.total_missing_days} 缺失日
+                </span>
+              </div>
+            </div>
+            <div className="health-gap-details">
+              <h3 className="health-gap-details__title">缺口最多的前 {gaps.details.length} 个品种:</h3>
+              {gaps.details.slice(0, 10).map(detail => (
+                <div key={detail.symbol_code} className="health-gap-item">
+                  <div 
+                    className="health-gap-item__header"
+                    onClick={() => setGapsExpanded(prev => ({
+                      ...prev,
+                      [detail.symbol_code]: !prev[detail.symbol_code]
+                    }))}
+                  >
+                    <span className="health-gap-item__symbol">
+                      {detail.symbol_code} - {detail.symbol_name}
+                      <span className="health-gap-item__type">[{detail.symbol_type}]</span>
+                    </span>
+                    <span className="health-gap-item__count">
+                      {detail.gap_count} 个缺口
+                      <span className="health-gap-item__toggle">
+                        {gapsExpanded[detail.symbol_code] ? ' ▼' : ' ▶'}
+                      </span>
+                    </span>
+                  </div>
+                  {gapsExpanded[detail.symbol_code] && (
+                    <div className="health-gap-item__dates">
+                      {detail.missing_dates.slice(0, 20).join(', ')}
+                      {detail.missing_dates.length > 20 && ` ... (${detail.missing_dates.length - 20} more)`}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
+
+      {/* Per-Stock Drill-Down Section */}
+      <section className="health-section">
+        <h2 className="health-section__title">📊 个股状态钻取</h2>
+        {gapsError ? (
+          <p style={{ color: "#f87171", padding: "0.5rem 1rem" }}>加载失败: {gapsError}</p>
+        ) : !gaps ? (
+          <p style={{ padding: "0.5rem 1rem" }}>加载中...</p>
+        ) : (
+          <>
+            <div className="health-stock-search">
+              <input
+                type="text"
+                placeholder="搜索股票代码或名称..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="health-stock-search__input"
+              />
+              <span className="health-stock-search__count">
+                显示 {filteredGapDetails.length} / {gaps.details.length} 个品种
+              </span>
+            </div>
+            <div className="health-stock-list">
+              {filteredGapDetails.slice(0, 20).map(detail => (
+                <div key={detail.symbol_code} className="health-stock-item">
+                  <span className="health-stock-item__code">{detail.symbol_code}</span>
+                  <span className="health-stock-item__name">{detail.symbol_name}</span>
+                  <span className={`health-stock-item__indicator ${detail.gap_count === 0 ? 'health-stock-item__indicator--fresh' : detail.gap_count < 10 ? 'health-stock-item__indicator--stale' : 'health-stock-item__indicator--critical'}`}>
+                    {detail.gap_count === 0 ? '✓' : detail.gap_count < 10 ? '⚠' : '✗'}
+                  </span>
+                  <span className="health-stock-item__gaps">{detail.gap_count} 缺口</span>
+                </div>
+              ))}
+              {filteredGapDetails.length > 20 && (
+                <p style={{ textAlign: 'center', color: 'rgba(230, 237, 247, 0.5)', fontSize: '0.8rem', padding: '0.5rem' }}>
+                  仅显示前 20 个结果，请使用搜索框过滤
+                </p>
+              )}
+            </div>
+          </>
+        )}
+      </section>
+
+      {/* Recent Failures Section */}
+      <section className="health-section">
+        <h2 className="health-section__title">⚠️ 近期更新失败</h2>
+        {failuresError ? (
+          <p style={{ color: "#f87171", padding: "0.5rem 1rem" }}>加载失败: {failuresError}</p>
+        ) : !failures ? (
+          <p style={{ padding: "0.5rem 1rem" }}>加载中...</p>
+        ) : failures.count === 0 ? (
+          <p style={{ color: "#22c55e", padding: "0.5rem 1rem" }}>✓ 近期无更新失败</p>
+        ) : (
+          <table className="health-table">
+            <thead>
+              <tr>
+                <th>更新类型</th>
+                <th>品种类型</th>
+                <th>时间周期</th>
+                <th>错误信息</th>
+                <th>时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              {failures.failures.slice(0, 20).map(failure => (
+                <tr key={failure.id}>
+                  <td className="health-table__name">{failure.update_type}</td>
+                  <td>{failure.symbol_type || '—'}</td>
+                  <td>{failure.timeframe || '—'}</td>
+                  <td className="health-table__error">{failure.error_message || '—'}</td>
+                  <td className="health-table__time">
+                    {failure.started_at ? new Date(failure.started_at).toLocaleString("zh-CN") : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      {/* Data Consistency Section */}
+      <section className="health-section">
+        <h2 className="health-section__title">🔬 数据一致性检查</h2>
+        {consistencyError ? (
+          <p style={{ color: "#f87171", padding: "0.5rem 1rem" }}>加载失败: {consistencyError}</p>
+        ) : consistencyLoading ? (
+          <div className="health-consistency-loading">
+            <span className="health-spinner">⏳</span>
+            <span>正在检查数据一致性...</span>
+          </div>
+        ) : !consistency ? (
+          <p style={{ padding: "0.5rem 1rem" }}>无数据</p>
+        ) : (
+          <>
+            <div className="health-consistency-summary">
+              <div className="health-consistency-summary__item">
+                <span className="health-consistency-summary__label">一致性率:</span>
+                <span className={`health-consistency-summary__value ${consistency.summary.is_healthy ? 'health-consistency-summary__value--ok' : 'health-consistency-summary__value--warn'}`}>
+                  {(consistency.summary.consistency_rate * 100).toFixed(1)}%
+                </span>
+              </div>
+              <div className="health-consistency-summary__item">
+                <span className="health-consistency-summary__label">已验证:</span>
+                <span className="health-consistency-summary__value">{consistency.summary.total_validated}</span>
+              </div>
+              <div className="health-consistency-summary__item">
+                <span className="health-consistency-summary__label">不一致项:</span>
+                <span className="health-consistency-summary__value">{consistency.summary.total_inconsistencies}</span>
+              </div>
+            </div>
+            {consistency.inconsistencies.length > 0 && (
+              <div className="health-consistency-issues">
+                <h3 className="health-consistency-issues__title">不一致项详情:</h3>
+                {consistency.inconsistencies.map((item, idx) => (
+                  <div key={idx} className="health-consistency-issue">
+                    <span className="health-consistency-issue__symbol">{item.symbol}</span>
+                    <span className="health-consistency-issue__detail">{item.details}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      {/* Existing Aggregate Freshness Sections */}
       <section className="health-section">
         <h2 className="health-section__title">定量数据源</h2>
         <table className="health-table">
