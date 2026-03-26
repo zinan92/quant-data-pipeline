@@ -1,0 +1,99 @@
+{
+  "milestone": "historical-backfill",
+  "round": 1,
+  "status": "fail",
+  "assertionsSummary": {
+    "total": 22,
+    "passed": 5,
+    "failed": 17,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-HEALTH-012",
+    "VAL-HEALTH-013",
+    "VAL-HEALTH-016",
+    "VAL-BACKFILL-003",
+    "VAL-CROSS-003"
+  ],
+  "failedAssertions": [
+    {
+      "id": "VAL-BACKFILL-001",
+      "reason": "Re-run stock validation still found failing pre-2021 stocks without 5-year coverage; the latest flow report counted 2376 pre-2021 listings missing early stock daily data or starting after 2021-06-01."
+    },
+    {
+      "id": "VAL-BACKFILL-002",
+      "reason": "Latest stock validation still found 2375 pre-2021 listings with fewer than 1000 stock daily rows."
+    },
+    {
+      "id": "VAL-BACKFILL-021",
+      "reason": "Latest stock validation still found 1168 post-2021 IPO listings whose stock daily data starts more than 30 days after list_date or is entirely missing."
+    },
+    {
+      "id": "VAL-CROSS-002",
+      "reason": "Expanded stock universe is still not fully backfilled; 294 watchlist symbols lack any stock daily row before 2021-06-01, including pre-2021 stock 000792."
+    },
+    {
+      "id": "VAL-HEALTH-001",
+      "reason": "/health only shows aggregate freshness tables and GET /api/health/gaps returns 404, so no gap detection section is present."
+    },
+    {
+      "id": "VAL-HEALTH-002",
+      "reason": "routes_health.py has no /api/health/gaps endpoint or trade_calendar-backed gap detection logic."
+    },
+    {
+      "id": "VAL-HEALTH-003",
+      "reason": "No per-stock drill-down is rendered on /health."
+    },
+    {
+      "id": "VAL-HEALTH-004",
+      "reason": "No stock list/search/filter/pagination exists, so the dashboard cannot handle the expanded universe at symbol level."
+    },
+    {
+      "id": "VAL-HEALTH-005",
+      "reason": "No recent failures section exists and GET /api/health/failures returns 404."
+    },
+    {
+      "id": "VAL-HEALTH-006",
+      "reason": "There is no failures endpoint/query to validate ordering and limits."
+    },
+    {
+      "id": "VAL-HEALTH-007",
+      "reason": "No data consistency section exists and GET /api/health/consistency returns 404."
+    },
+    {
+      "id": "VAL-HEALTH-008",
+      "reason": "The health page performs only a unified freshness fetch; the required async consistency section is absent."
+    },
+    {
+      "id": "VAL-HEALTH-009",
+      "reason": "No Notification.requestPermission() logic was found or observed."
+    },
+    {
+      "id": "VAL-HEALTH-010",
+      "reason": "No status-transition browser notification implementation exists."
+    },
+    {
+      "id": "VAL-HEALTH-011",
+      "reason": "No trade calendar health section is shown on /health."
+    },
+    {
+      "id": "VAL-HEALTH-014",
+      "reason": "Overall status is based only on freshness data and ignores gaps, consistency, and calendar health."
+    },
+    {
+      "id": "VAL-HEALTH-015",
+      "reason": "Section-level backend error handling could not be exercised because the required new endpoints and sections are missing; current behavior is effectively a failed prerequisite."
+    },
+    {
+      "id": "VAL-CROSS-001",
+      "reason": "Health dashboard cannot show zero-gap backfill status because /api/health/gaps is missing."
+    },
+    {
+      "id": "VAL-CROSS-004",
+      "reason": "The extended 2021-2026 trade calendar is not wired into any implemented health gap detection flow."
+    }
+  ],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null
+}

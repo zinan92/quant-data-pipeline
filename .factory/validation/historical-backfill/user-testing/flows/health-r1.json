@@ -1,0 +1,443 @@
+{
+  "groupId": "health-r1",
+  "testedAt": "2026-03-26T04:47:40Z",
+  "isolation": {
+    "frontendUrl": "http://localhost:5173",
+    "backendUrl": "http://localhost:8000",
+    "browserSession": "2d18787bfaef",
+    "missionDir": "/Users/wendy/.factory/missions/5ccfbb11-945c-4b92-969a-cfbdf3f9d668"
+  },
+  "toolsUsed": [
+    "agent-browser",
+    "curl",
+    "code-inspection"
+  ],
+  "assertions": [
+    {
+      "id": "VAL-HEALTH-001",
+      "title": "Gap Detection Section Visible on Health Page",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Open /health in browser",
+          "expected": "Gap detection section visible",
+          "observed": "Page rendered only overall banner plus 定量/定性 freshness tables"
+        },
+        {
+          "action": "Call GET /api/health/gaps",
+          "expected": "200 with gap payload",
+          "observed": "Endpoint returned 404 {\"detail\":\"Not Found\"}"
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "historical-backfill/health-r1/health-page.png"
+        ],
+        "consoleErrors": "none",
+        "network": "GET /api/health/unified -> 200; GET /api/health/gaps -> 404"
+      },
+      "issues": "No gap detection section exists in UI and backend gaps endpoint is missing."
+    },
+    {
+      "id": "VAL-HEALTH-002",
+      "title": "Gap Detection Backend Cross-References Trade Calendar",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Inspect src/api/routes_health.py for a gaps handler",
+          "expected": "Gap detection endpoint exists and references trade_calendar",
+          "observed": "routes_health.py only exposes /freshness, /data, /unified; no trade_calendar gap logic found"
+        }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": null,
+        "network": "GET /api/health/gaps -> 404"
+      },
+      "issues": "Gap detection backend is not implemented, so no trade_calendar cross-reference exists."
+    },
+    {
+      "id": "VAL-HEALTH-003",
+      "title": "Per-Stock Drill-Down Shows Individual Symbol Status",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Review /health UI content",
+          "expected": "Per-stock rows with symbol code, name, freshness, gap count",
+          "observed": "UI shows only aggregate source rows such as 股票日K/指数日K; no per-stock list or drill-down"
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "historical-backfill/health-r1/health-page.png"
+        ],
+        "consoleErrors": "none",
+        "network": "GET /api/health/unified -> 200"
+      },
+      "issues": "Per-stock drill-down is absent."
+    },
+    {
+      "id": "VAL-HEALTH-004",
+      "title": "Per-Stock Drill-Down Handles ~1000 Stocks",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Look for search/filter/pagination or stock list on /health",
+          "expected": "Usable mechanism to locate a specific stock among ~1000 symbols",
+          "observed": "No stock list or search/filter controls specific to health data are present"
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "historical-backfill/health-r1/health-page.png"
+        ],
+        "consoleErrors": "none",
+        "network": "GET /api/health/unified -> 200"
+      },
+      "issues": "Feature not present; cannot assess large-list handling because no per-stock view exists."
+    },
+    {
+      "id": "VAL-HEALTH-005",
+      "title": "Recent Failures Section Shows DataUpdateLog Entries",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Open /health page",
+          "expected": "Recent failures section visible",
+          "observed": "No failures section rendered"
+        },
+        {
+          "action": "Call GET /api/health/failures",
+          "expected": "200 with failure entries or empty state",
+          "observed": "Endpoint returned 404 {\"detail\":\"Not Found\"}"
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "historical-backfill/health-r1/health-page.png"
+        ],
+        "consoleErrors": "none",
+        "network": "GET /api/health/failures -> 404"
+      },
+      "issues": "Recent failures surface is missing in both UI and API."
+    },
+    {
+      "id": "VAL-HEALTH-006",
+      "title": "Recent Failures Limited and Ordered by Recency",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Inspect routes_health.py for failures query",
+          "expected": "Query with ORDER BY started_at DESC and LIMIT",
+          "observed": "No failures endpoint/query exists in routes_health.py"
+        }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": null,
+        "network": "GET /api/health/failures -> 404"
+      },
+      "issues": "Cannot limit or sort recent failures because endpoint is absent."
+    },
+    {
+      "id": "VAL-HEALTH-007",
+      "title": "Data Consistency Section Shows Validation Results",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Open /health page",
+          "expected": "Consistency section with rate, item count, inconsistencies",
+          "observed": "No consistency section rendered"
+        },
+        {
+          "action": "Call GET /api/health/consistency",
+          "expected": "200 consistency payload",
+          "observed": "Endpoint returned 404 {\"detail\":\"Not Found\"}"
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "historical-backfill/health-r1/health-page.png"
+        ],
+        "consoleErrors": "none",
+        "network": "GET /api/health/consistency -> 404"
+      },
+      "issues": "Consistency validation is not wired to UI or API."
+    },
+    {
+      "id": "VAL-HEALTH-008",
+      "title": "Data Consistency Does Not Block Page Load",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Inspect frontend health component load flow",
+          "expected": "Other sections load first and consistency loads asynchronously",
+          "observed": "Component performs a single fetch to /api/health/unified and has no separate async consistency request"
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "historical-backfill/health-r1/health-page.png"
+        ],
+        "consoleErrors": "none",
+        "network": "GET /api/health/unified -> 200 only"
+      },
+      "issues": "The required consistency section is absent rather than asynchronously loaded."
+    },
+    {
+      "id": "VAL-HEALTH-009",
+      "title": "Browser Notification Permission Requested",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Load /health and inspect page code/runtime state",
+          "expected": "Notification.requestPermission() invoked on first visit",
+          "observed": "Frontend code contains no Notification.requestPermission call; runtime Notification.permission remained 'denied' with no prompt/request behavior observed"
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "historical-backfill/health-r1/health-page.png"
+        ],
+        "consoleErrors": "none",
+        "network": "No notification-related requests/events observed"
+      },
+      "issues": "Notification permission request logic is missing."
+    },
+    {
+      "id": "VAL-HEALTH-010",
+      "title": "Browser Notification on Status Transition",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Inspect HealthDashboard.tsx for previous-status tracking",
+          "expected": "Status transition logic using useRef and notification firing",
+          "observed": "Component imports only useState/useEffect/useCallback; no useRef or notification logic present"
+        }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": null,
+        "network": null
+      },
+      "issues": "No status-transition notification implementation exists."
+    },
+    {
+      "id": "VAL-HEALTH-011",
+      "title": "Trade Calendar Health Section Visible",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Review /health UI",
+          "expected": "Trade calendar coverage section with date range and count",
+          "observed": "No trade calendar coverage section displayed"
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "historical-backfill/health-r1/health-page.png"
+        ],
+        "consoleErrors": "none",
+        "network": "GET /api/health/unified -> 200"
+      },
+      "issues": "Trade calendar health is absent from the dashboard."
+    },
+    {
+      "id": "VAL-HEALTH-012",
+      "title": "Existing Aggregate Freshness Remains Functional",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Open /health page",
+          "expected": "定量数据源 and 定性数据源 tables render with status icons and data",
+          "observed": "Both aggregate tables rendered successfully with rows, timestamps, status icons, and counts"
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "historical-backfill/health-r1/health-page.png"
+        ],
+        "consoleErrors": "none",
+        "network": "GET /api/health/unified -> 200"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-HEALTH-013",
+      "title": "Auto-Refresh Continues Working",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Stay on /health for >60 seconds",
+          "expected": "Auto-refresh triggers new requests and updates timestamp",
+          "observed": "Top timestamp advanced from 12:45:11 to 12:47:11 and network tracker showed two GET /api/health/unified requests"
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "historical-backfill/health-r1/health-page.png",
+          "historical-backfill/health-r1/health-page-after-refresh.png"
+        ],
+        "consoleErrors": "none",
+        "network": "GET /api/health/unified fired at least twice during observation"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-HEALTH-014",
+      "title": "Overall Status Banner Reflects All Health Dimensions",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Inspect backend status logic and UI binding",
+          "expected": "Overall status includes gap count, consistency, and calendar health",
+          "observed": "UI banner is driven only by unified.status from /api/health/unified, and backend overall is computed from quant/qual freshness states only; no gap/consistency/calendar inputs exist"
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "historical-backfill/health-r1/health-page.png"
+        ],
+        "consoleErrors": null,
+        "network": "GET /api/health/unified -> 200 status=healthy"
+      },
+      "issues": "Overall banner ignores required health dimensions because they are not implemented."
+    },
+    {
+      "id": "VAL-HEALTH-015",
+      "title": "Health Page Handles Backend Errors Gracefully",
+      "status": "blocked",
+      "steps": [
+        {
+          "action": "Attempt to validate behavior when one new endpoint fails",
+          "expected": "Single section error while rest of page renders",
+          "observed": "The required new endpoints (/api/health/gaps, /failures, /consistency) already return 404 and corresponding sections do not exist, so isolated section-level error handling cannot be exercised"
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "historical-backfill/health-r1/health-page.png"
+        ],
+        "consoleErrors": "none",
+        "network": "GET /api/health/gaps -> 404; GET /api/health/failures -> 404; GET /api/health/consistency -> 404"
+      },
+      "issues": "Blocked by missing endpoint/section implementation; no granular error-handling path to test."
+    },
+    {
+      "id": "VAL-HEALTH-016",
+      "title": "Health Page Navigable from Main Navigation",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Open homepage",
+          "expected": "健康 button visible in main navigation",
+          "observed": "Top navigation included a ❤️ 健康 button"
+        },
+        {
+          "action": "Click 健康 button",
+          "expected": "Navigate to /health",
+          "observed": "Browser navigated to http://localhost:5173/health"
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "historical-backfill/health-r1/home-nav.png",
+          "historical-backfill/health-r1/health-page.png"
+        ],
+        "consoleErrors": "none",
+        "network": null
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CROSS-001",
+      "title": "Health Dashboard Shows Zero Gaps for Backfilled Period",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Call GET /api/health/gaps",
+          "expected": "Gap report for backfilled period",
+          "observed": "Endpoint returned 404 and no gap data is available"
+        },
+        {
+          "action": "Review /health page",
+          "expected": "UI shows clean/zero-gap state or gaps summary",
+          "observed": "Dashboard has no gap section at all"
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "historical-backfill/health-r1/health-page.png"
+        ],
+        "consoleErrors": "none",
+        "network": "GET /api/health/gaps -> 404"
+      },
+      "issues": "Cannot show zero-gap backfill health because gap detection surface is missing."
+    },
+    {
+      "id": "VAL-CROSS-004",
+      "title": "Extended Calendar Powers Gap Detection",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Inspect health routes for gap detection query",
+          "expected": "Gap detection checks trade_calendar from 2021 onward",
+          "observed": "No gap detection query or /api/health/gaps handler exists; no use of trade_calendar for health gaps was found"
+        }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": null,
+        "network": "GET /api/health/gaps -> 404"
+      },
+      "issues": "Extended calendar is not wired into any implemented gap detection endpoint."
+    }
+  ],
+  "frictions": [
+    {
+      "description": "The validation contract references /api/health/gaps, /api/health/failures, and /api/health/consistency, but the running API only exposes /api/health/freshness, /api/health/data, and /api/health/unified.",
+      "resolved": true,
+      "resolution": "Confirmed actual available endpoints through openapi.json and adapted validation to mark missing surfaces as failures/blockers.",
+      "affectedAssertions": [
+        "VAL-HEALTH-001",
+        "VAL-HEALTH-002",
+        "VAL-HEALTH-005",
+        "VAL-HEALTH-006",
+        "VAL-HEALTH-007",
+        "VAL-HEALTH-015",
+        "VAL-CROSS-001",
+        "VAL-CROSS-004"
+      ]
+    },
+    {
+      "description": "agent-browser network tracker initially showed no requests even after page navigation.",
+      "resolved": true,
+      "resolution": "Used page text timestamps plus a second network-requests check after waiting >60 seconds to confirm auto-refresh behavior.",
+      "affectedAssertions": [
+        "VAL-HEALTH-013"
+      ]
+    }
+  ],
+  "blockers": [
+    {
+      "description": "Required health-dashboard subsections and backing endpoints for gaps, failures, and consistency are not implemented in the running app/API.",
+      "affectedAssertions": [
+        "VAL-HEALTH-001",
+        "VAL-HEALTH-002",
+        "VAL-HEALTH-003",
+        "VAL-HEALTH-004",
+        "VAL-HEALTH-005",
+        "VAL-HEALTH-006",
+        "VAL-HEALTH-007",
+        "VAL-HEALTH-008",
+        "VAL-HEALTH-011",
+        "VAL-HEALTH-014",
+        "VAL-HEALTH-015",
+        "VAL-CROSS-001",
+        "VAL-CROSS-004"
+      ],
+      "quickFixAttempted": "Verified live routes, OpenAPI schema, frontend rendering, and source files to distinguish missing implementation from transient runtime failure."
+    }
+  ],
+  "summary": "Tested 18 assertions: 3 passed, 14 failed, 1 blocked. The current /health page only provides aggregate freshness tables via /api/health/unified; gap detection, failures, consistency, calendar health, and notification features required by the contract are missing."
+}

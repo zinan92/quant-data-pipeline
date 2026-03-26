@@ -1,0 +1,108 @@
+{
+  "groupId": "stock-backfill-r4",
+  "testedAt": "2026-03-26T04:46:23Z",
+  "isolation": {
+    "surface": "shell/sqlite3 + code inspection only",
+    "database": "/Users/wendy/work/trading-co/ashare/data/market.db",
+    "missionDir": "/Users/wendy/.factory/missions/5ccfbb11-945c-4b92-969a-cfbdf3f9d668",
+    "projectRoot": "/Users/wendy/work/trading-co/ashare"
+  },
+  "toolsUsed": [
+    "sqlite3-via-python",
+    "code-inspection"
+  ],
+  "assertions": [
+    {
+      "id": "VAL-BACKFILL-001",
+      "title": "Stock Daily Data Covers 5-Year Date Range",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Query pre-2021 stocks joined to stock daily MIN(trade_time)",
+          "expected": "No more than 10 rows with MIN(trade_time) > 2021-06-01 or NULL",
+          "observed": "2376 rows exceeded threshold or had no stock daily data"
+        }
+      ],
+      "evidence": {
+        "files": [
+          "historical-backfill/stock-backfill-r4/VAL-BACKFILL-001.json"
+        ],
+        "queryResult": "2376 failing pre-2021 stocks out of 3988 pre-2021 listings; sample rows include 000004, 000006, 000007 with NULL min_trade_time"
+      },
+      "issues": "Threshold exceeded by 2366 stocks."
+    },
+    {
+      "id": "VAL-BACKFILL-002",
+      "title": "Sufficient Row Count Per Stock",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Query pre-2021 stocks joined to stock daily row counts",
+          "expected": "No more than 10 rows with row_count < 1000",
+          "observed": "2375 rows had fewer than 1000 daily rows"
+        }
+      ],
+      "evidence": {
+        "files": [
+          "historical-backfill/stock-backfill-r4/VAL-BACKFILL-002.json"
+        ],
+        "queryResult": "2375 failing pre-2021 stocks; many rows have 0 daily rows"
+      },
+      "issues": "Threshold exceeded by 2365 stocks."
+    },
+    {
+      "id": "VAL-BACKFILL-021",
+      "title": "Post-2021 IPO Stocks Backfilled from List Date",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Query post-2021 IPOs comparing list_date to stock daily MIN(trade_time)",
+          "expected": "No more than 10 rows with start date more than 30 days after list_date or NULL",
+          "observed": "1168 post-2021 IPO stocks exceeded threshold or had no stock daily data"
+        }
+      ],
+      "evidence": {
+        "files": [
+          "historical-backfill/stock-backfill-r4/VAL-BACKFILL-021.json"
+        ],
+        "queryResult": "1168 failing post-2021 IPO stocks out of 1490; sample rows include 001201, 001202, 001205 with NULL min_trade_time"
+      },
+      "issues": "Threshold exceeded by 1158 stocks."
+    },
+    {
+      "id": "VAL-CROSS-002",
+      "title": "Expanded Stock Universe Fully Backfilled",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Query watchlist stocks missing any stock daily row before 2021-06-01 and cross-reference list_date",
+          "expected": "Only post-2021 IPOs appear, with no more than 10 pre-2021 watchlist stocks missing early data",
+          "observed": "294 watchlist stocks lacked any row before 2021-06-01, including pre-2021 stock 000792 (list_date 19970904)"
+        }
+      ],
+      "evidence": {
+        "files": [
+          "historical-backfill/stock-backfill-r4/VAL-CROSS-002.json",
+          "historical-backfill/stock-backfill-r4/stock-backfill-r4-summary.json"
+        ],
+        "queryResult": "294 watchlist stocks missing early data; watchlist_total=1938, watchlist_with_kline=1935"
+      },
+      "issues": "At least one pre-2021 watchlist stock is missing early data, so the result is not limited to post-2021 IPOs."
+    }
+  ],
+  "frictions": [
+    {
+      "description": "Contract queries had to be adapted to local schema because watchlist.ticker and klines.symbol_code store 6-digit symbols, while stock_basic.list_date is keyed by stock_basic.symbol rather than ts_code.",
+      "resolved": true,
+      "resolution": "Validated schema with read-only joins and reran all four assertions using stock_basic.symbol joins.",
+      "affectedAssertions": [
+        "VAL-BACKFILL-001",
+        "VAL-BACKFILL-002",
+        "VAL-BACKFILL-021",
+        "VAL-CROSS-002"
+      ]
+    }
+  ],
+  "blockers": [],
+  "summary": "Tested 4 assertions: 0 passed, 4 failed. Key failing counts: VAL-BACKFILL-001=2376, VAL-BACKFILL-002=2375, VAL-BACKFILL-021=1168, VAL-CROSS-002=294."
+}
