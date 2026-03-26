@@ -152,6 +152,195 @@ class TestHealthGaps:
         assert len(data["details"]) <= 50
         assert data["total_gaps"] > 0
 
+    def test_respects_stock_listing_date(self, client, db_session: Session):
+        """Should only count gaps AFTER a stock's listing date, not before."""
+        from sqlalchemy import text
+        
+        # Setup: Add calendar for 2 weeks
+        for i in range(10):
+            db_session.add(TradeCalendar(date=f"2021-01-{4+i:02d}", is_trading_day=True))
+        
+        # Add a stock that IPO'd on 2021-01-10 (7th trading day)
+        # This stock should only be expected to have data from 2021-01-10 onwards, not from 2021-01-04
+        db_session.execute(text(
+            "CREATE TABLE IF NOT EXISTS stock_basic ("
+            "ts_code TEXT PRIMARY KEY, symbol TEXT, name TEXT, "
+            "area TEXT, industry TEXT, market TEXT, list_date TEXT)"
+        ))
+        db_session.execute(text(
+            "INSERT OR REPLACE INTO stock_basic (ts_code, symbol, name, list_date) "
+            "VALUES ('300999.SZ', '300999', '新IPO股票', '20210110')"
+        ))
+        
+        # Add klines for this stock starting from listing date (2021-01-10 onwards)
+        # Missing 2021-01-11, 2021-01-12, 2021-01-13 (3 gaps)
+        for date in ["2021-01-10"]:
+            db_session.add(Kline(
+                symbol_type=SymbolType.STOCK,
+                symbol_code="300999",  # Plain format as stored in klines
+                symbol_name="新IPO股票",
+                timeframe=KlineTimeframe.DAY,
+                trade_time=f"{date} 15:00:00",
+                open=20.0,
+                high=22.0,
+                low=19.5,
+                close=21.0,
+                volume=5000000,
+                amount=100000000
+            ))
+        db_session.commit()
+        
+        # Test
+        resp = client.get("/api/health/gaps")
+        assert resp.status_code == 200
+        data = resp.json()
+        
+        # Find the IPO stock in details
+        ipo_stock = next((d for d in data["details"] if d["symbol_code"] == "300999"), None)
+        assert ipo_stock is not None
+        
+        # Should only count gaps from 2021-01-10 onwards (missing 2021-01-11, 12, 13)
+        # NOT from 2021-01-04 (which would incorrectly add 6 more gap days)
+        assert ipo_stock["gap_count"] == 3
+        assert "2021-01-04" not in ipo_stock["missing_dates"]
+        assert "2021-01-11" in ipo_stock["missing_dates"]
+        assert "2021-01-12" in ipo_stock["missing_dates"]
+        assert "2021-01-13" in ipo_stock["missing_dates"]
+
+    def test_stock_listed_before_backfill_uses_backfill_date(self, client, db_session: Session):
+        """Stocks listed before 2021-01-04 should use backfill start date."""
+        from sqlalchemy import text
+        
+        # Setup: Add calendar
+        for i in range(5):
+            db_session.add(TradeCalendar(date=f"2021-01-{4+i:02d}", is_trading_day=True))
+        
+        # Add a stock that IPO'd in 2010 (well before backfill start)
+        db_session.execute(text(
+            "CREATE TABLE IF NOT EXISTS stock_basic ("
+            "ts_code TEXT PRIMARY KEY, symbol TEXT, name TEXT, "
+            "area TEXT, industry TEXT, market TEXT, list_date TEXT)"
+        ))
+        db_session.execute(text(
+            "INSERT OR REPLACE INTO stock_basic (ts_code, symbol, name, list_date) "
+            "VALUES ('000001.SZ', '000001', '平安银行', '19910403')"
+        ))
+        
+        # Add klines missing 2 days (2021-01-06, 2021-01-07)
+        for date in ["2021-01-04", "2021-01-05", "2021-01-08"]:
+            db_session.add(Kline(
+                symbol_type=SymbolType.STOCK,
+                symbol_code="000001",
+                symbol_name="平安银行",
+                timeframe=KlineTimeframe.DAY,
+                trade_time=f"{date} 15:00:00",
+                open=10.0,
+                high=10.5,
+                low=9.8,
+                close=10.2,
+                volume=1000000,
+                amount=10000000
+            ))
+        db_session.commit()
+        
+        # Test
+        resp = client.get("/api/health/gaps")
+        assert resp.status_code == 200
+        data = resp.json()
+        
+        # Should count gaps from 2021-01-04 onwards (not from 1991)
+        stock = next((d for d in data["details"] if d["symbol_code"] == "000001"), None)
+        assert stock is not None
+        assert stock["gap_count"] == 2
+        assert set(stock["missing_dates"]) == {"2021-01-06", "2021-01-07"}
+
+    def test_indices_use_backfill_date_not_listing_date(self, client, db_session: Session):
+        """Indices should always use backfill start date, not listing dates."""
+        # Setup: Add calendar
+        for i in range(5):
+            db_session.add(TradeCalendar(date=f"2021-01-{4+i:02d}", is_trading_day=True))
+        
+        # Add index klines missing 2 days
+        for date in ["2021-01-04", "2021-01-05", "2021-01-08"]:
+            db_session.add(Kline(
+                symbol_type=SymbolType.INDEX,
+                symbol_code="000001.SH",
+                symbol_name="上证指数",
+                timeframe=KlineTimeframe.DAY,
+                trade_time=f"{date} 15:00:00",
+                open=3500.0,
+                high=3550.0,
+                low=3480.0,
+                close=3520.0,
+                volume=100000000,
+                amount=200000000000
+            ))
+        db_session.commit()
+        
+        # Test
+        resp = client.get("/api/health/gaps")
+        assert resp.status_code == 200
+        data = resp.json()
+        
+        # Indices should use backfill start date
+        index = next((d for d in data["details"] if d["symbol_code"] == "000001.SH"), None)
+        assert index is not None
+        assert index["gap_count"] == 2
+        assert set(index["missing_dates"]) == {"2021-01-06", "2021-01-07"}
+
+    def test_returns_total_tracked_and_zero_gaps_counts(self, client, db_session: Session):
+        """Should return total tracked stocks and count of stocks with zero gaps."""
+        # Setup: Add calendar
+        for i in range(5):
+            db_session.add(TradeCalendar(date=f"2021-01-{4+i:02d}", is_trading_day=True))
+        
+        # Add 3 stocks: 2 with complete data, 1 with gaps
+        for stock_code, has_gaps in [("000001", False), ("000002", False), ("000003", True)]:
+            dates = ["2021-01-04", "2021-01-05", "2021-01-06", "2021-01-07", "2021-01-08"]
+            if has_gaps:
+                dates = dates[:3]  # Only partial data
+            
+            for date in dates:
+                db_session.add(Kline(
+                    symbol_type=SymbolType.STOCK,
+                    symbol_code=stock_code,
+                    symbol_name=f"股票{stock_code}",
+                    timeframe=KlineTimeframe.DAY,
+                    trade_time=f"{date} 15:00:00",
+                    open=10.0,
+                    high=10.5,
+                    low=9.8,
+                    close=10.2,
+                    volume=1000000,
+                    amount=10000000
+                ))
+        
+        # Add 1 index (should not be counted in stock totals)
+        db_session.add(Kline(
+            symbol_type=SymbolType.INDEX,
+            symbol_code="000001.SH",
+            symbol_name="上证指数",
+            timeframe=KlineTimeframe.DAY,
+            trade_time="2021-01-04 15:00:00",
+            open=3500.0,
+            high=3550.0,
+            low=3480.0,
+            close=3520.0,
+            volume=100000000,
+            amount=200000000000
+        ))
+        db_session.commit()
+        
+        # Test
+        resp = client.get("/api/health/gaps")
+        assert resp.status_code == 200
+        data = resp.json()
+        
+        # Should count stocks only (not indices)
+        assert data["total_tracked_stocks"] == 3
+        # 2 stocks have zero gaps
+        assert data["stocks_with_zero_gaps"] == 2
+
 
 class TestHealthConsistency:
     """Tests for GET /api/health/consistency endpoint"""

@@ -314,14 +314,22 @@ def get_health_gaps(db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
     Gap detection endpoint: cross-references trade_calendar with klines to find missing trading days.
     
+    Only counts gaps AFTER a stock's listing date (from stock_basic) or after the backfill start date
+    (2021-01-04), whichever is later. This prevents false gaps for stocks that IPO'd after the 
+    backfill start date.
+    
     Returns:
         - total_gaps: Total count of missing trading days across all symbols
         - by_type: Breakdown by symbol type (STOCK/INDEX)
         - details: Top 50 symbols with most gaps (symbol_code, symbol_type, gap_count, missing_dates)
         - calendar_coverage: Trade calendar metadata (min_date, max_date, trading_days)
+        - total_tracked_stocks: Total number of tracked stocks (for frontend summary)
+        - stocks_with_zero_gaps: Number of stocks with no gaps (healthy)
     """
     from src.models import TradeCalendar, Kline, SymbolType, KlineTimeframe
-    from sqlalchemy import func, select
+    from sqlalchemy import func, select, text
+    
+    BACKFILL_START_DATE = "2021-01-04"
     
     # 1. Get calendar coverage
     cal_min = db.execute(select(func.min(TradeCalendar.date)).filter(TradeCalendar.is_trading_day == 1)).scalar()
@@ -337,35 +345,70 @@ def get_health_gaps(db: Session = Depends(get_db)) -> Dict[str, Any]:
     # 2. Get all trading days from calendar (2021-01-04 onwards)
     trading_days_result = db.execute(
         select(TradeCalendar.date)
-        .filter(TradeCalendar.is_trading_day == 1, TradeCalendar.date >= "2021-01-04")
+        .filter(TradeCalendar.is_trading_day == 1, TradeCalendar.date >= BACKFILL_START_DATE)
         .order_by(TradeCalendar.date)
     ).fetchall()
-    trading_days = {row[0] for row in trading_days_result}
+    all_trading_days = {row[0] for row in trading_days_result}
     
     # 3. Get all tracked symbols (both STOCK and INDEX) with their names
-    symbols_result = db.execute(
-        select(Kline.symbol_code, Kline.symbol_name, Kline.symbol_type)
-        .filter(
-            Kline.timeframe == KlineTimeframe.DAY,
-            Kline.symbol_type.in_([SymbolType.STOCK, SymbolType.INDEX])
-        )
-        .distinct()
-    ).fetchall()
+    # Use GROUP BY to get one row per (symbol_code, symbol_type) with the first non-null name
+    symbols_query = text("""
+        SELECT symbol_code, 
+               COALESCE(MAX(symbol_name), symbol_code) as symbol_name,
+               symbol_type
+        FROM klines 
+        WHERE timeframe = 'DAY' 
+          AND symbol_type IN ('STOCK', 'INDEX')
+        GROUP BY symbol_code, symbol_type
+    """)
+    symbols_result = db.execute(symbols_query).fetchall()
     
-    # 4. For each symbol, find gaps
+    # 4. Get stock listing dates from stock_basic (for filtering gaps)
+    # Map symbol_code (e.g., "000001") to list_date
+    # stock_basic uses ts_code format like "000001.SZ", so we need to match the plain symbol part
+    stock_list_dates = {}
+    try:
+        list_dates_result = db.execute(text(
+            "SELECT ts_code, list_date FROM stock_basic WHERE list_date IS NOT NULL"
+        )).fetchall()
+        
+        for ts_code, list_date in list_dates_result:
+            if not list_date:
+                continue
+            # Extract plain symbol from ts_code (e.g., "000001.SZ" -> "000001")
+            plain_symbol = ts_code.split('.')[0] if '.' in ts_code else ts_code
+            # Convert list_date from YYYYMMDD to YYYY-MM-DD format
+            if len(list_date) == 8 and list_date.isdigit():
+                formatted_date = f"{list_date[:4]}-{list_date[4:6]}-{list_date[6:8]}"
+                stock_list_dates[plain_symbol] = formatted_date
+    except Exception as e:
+        logger.warning(f"Failed to load stock listing dates: {e}")
+        # Continue without listing dates (will use backfill start date for all stocks)
+    
+    # 5. For each symbol, find gaps (considering listing dates for stocks)
     gap_details = []
     by_type = {
         "STOCK": {"symbols_with_gaps": 0, "total_missing_days": 0},
         "INDEX": {"symbols_with_gaps": 0, "total_missing_days": 0}
     }
     
-    for symbol_code, symbol_name, symbol_type in symbols_result:
+    total_tracked_stocks = 0
+    stocks_with_zero_gaps = 0
+    
+    for symbol_code, symbol_name, symbol_type_str in symbols_result:
+        # symbol_type_str is a string when using raw SQL
+        # Count tracked stocks
+        if symbol_type_str == 'STOCK':
+            total_tracked_stocks += 1
+        
         # Get all kline dates for this symbol
+        # Convert symbol_type_str back to enum for query
+        symbol_type_enum = SymbolType.STOCK if symbol_type_str == 'STOCK' else SymbolType.INDEX
         kline_dates_result = db.execute(
             select(Kline.trade_time)
             .filter(
                 Kline.symbol_code == symbol_code,
-                Kline.symbol_type == symbol_type,
+                Kline.symbol_type == symbol_type_enum,
                 Kline.timeframe == KlineTimeframe.DAY
             )
         ).fetchall()
@@ -373,12 +416,28 @@ def get_health_gaps(db: Session = Depends(get_db)) -> Dict[str, Any]:
         # Extract date part (first 10 chars: YYYY-MM-DD)
         kline_dates = {row[0][:10] for row in kline_dates_result if row[0]}
         
+        # Determine expected start date for this symbol
+        # For stocks: MAX(list_date, BACKFILL_START_DATE)
+        # For indices: BACKFILL_START_DATE
+        if symbol_type_str == 'STOCK':
+            list_date = stock_list_dates.get(symbol_code)
+            if list_date and list_date > BACKFILL_START_DATE:
+                expected_start_date = list_date
+            else:
+                expected_start_date = BACKFILL_START_DATE
+        else:
+            # Indices should have data from backfill start
+            expected_start_date = BACKFILL_START_DATE
+        
+        # Filter trading days to only those >= expected_start_date
+        expected_trading_days = {d for d in all_trading_days if d >= expected_start_date}
+        
         # Find missing dates
-        missing = trading_days - kline_dates
+        missing = expected_trading_days - kline_dates
         
         if missing:
             missing_sorted = sorted(list(missing))
-            symbol_type_str = symbol_type.value.upper()  # Convert to uppercase for consistency
+            # symbol_type_str is already uppercase from SQL query
             gap_details.append({
                 "symbol_code": symbol_code,
                 "symbol_name": symbol_name or symbol_code,
@@ -390,19 +449,25 @@ def get_health_gaps(db: Session = Depends(get_db)) -> Dict[str, Any]:
             # Update by_type stats
             by_type[symbol_type_str]["symbols_with_gaps"] += 1
             by_type[symbol_type_str]["total_missing_days"] += len(missing)
+        else:
+            # No gaps for this symbol
+            if symbol_type_str == 'STOCK':
+                stocks_with_zero_gaps += 1
     
-    # 5. Sort by gap_count descending, limit to top 50 for performance
+    # 6. Sort by gap_count descending, limit to top 50 for performance
     gap_details.sort(key=lambda x: x["gap_count"], reverse=True)
     top_50_details = gap_details[:50]
     
-    # 6. Calculate total_gaps
+    # 7. Calculate total_gaps
     total_gaps = sum(detail["gap_count"] for detail in gap_details)
     
     return {
         "total_gaps": total_gaps,
         "by_type": by_type,
         "details": top_50_details,
-        "calendar_coverage": calendar_coverage
+        "calendar_coverage": calendar_coverage,
+        "total_tracked_stocks": total_tracked_stocks,
+        "stocks_with_zero_gaps": stocks_with_zero_gaps
     }
 
 

@@ -39,6 +39,8 @@ interface GapsData {
     max_date: string;
     trading_days: number;
   };
+  total_tracked_stocks: number;
+  stocks_with_zero_gaps: number;
 }
 
 interface FailureItem {
@@ -226,7 +228,8 @@ function fireStatusChangeNotification(newStatus: string) {
 function getOverallStatus(
   unifiedStatus: string,
   gaps: GapsData | null,
-  consistency: ConsistencyData | null
+  consistency: ConsistencyData | null,
+  calendarHealthy: boolean
 ): string {
   // Start with unified status
   let status = unifiedStatus;
@@ -238,6 +241,11 @@ function getOverallStatus(
   
   // Check consistency - if unhealthy, downgrade
   if (consistency && !consistency.summary.is_healthy) {
+    if (status === "healthy") status = "degraded";
+  }
+  
+  // Check calendar health - if unhealthy, downgrade
+  if (!calendarHealthy) {
     if (status === "healthy") status = "degraded";
   }
   
@@ -354,8 +362,11 @@ export function HealthDashboard() {
     return <div className="health-dashboard"><p style={{ color: "#f87171" }}>加载失败: {error}</p></div>;
   if (!data) return null;
 
-  // Calculate overall status considering gaps and consistency
-  const overallStatus = getOverallStatus(data.status, gaps, consistency);
+  // Calculate calendar health status
+  const calendarHealthy = gaps ? gaps.calendar_coverage.trading_days >= 1300 : true;
+  
+  // Calculate overall status considering gaps, consistency, and calendar health
+  const overallStatus = getOverallStatus(data.status, gaps, consistency, calendarHealthy);
   const overall = overallLabel(overallStatus);
   const quantEntries = Object.entries(data.quant);
   const qualEntries = Object.entries(data.qualitative).filter(
@@ -480,6 +491,24 @@ export function HealthDashboard() {
           <p style={{ padding: "0.5rem 1rem" }}>加载中...</p>
         ) : (
           <>
+            <div className="health-stock-summary">
+              <div className="health-stock-summary__item">
+                <span className="health-stock-summary__label">总追踪股票:</span>
+                <span className="health-stock-summary__value">{gaps.total_tracked_stocks}</span>
+              </div>
+              <div className="health-stock-summary__item">
+                <span className="health-stock-summary__label">无缺口(健康):</span>
+                <span className="health-stock-summary__value health-stock-summary__value--ok">
+                  {gaps.stocks_with_zero_gaps} ({gaps.total_tracked_stocks > 0 ? ((gaps.stocks_with_zero_gaps / gaps.total_tracked_stocks) * 100).toFixed(1) : 0}%)
+                </span>
+              </div>
+              <div className="health-stock-summary__item">
+                <span className="health-stock-summary__label">有缺口:</span>
+                <span className="health-stock-summary__value health-stock-summary__value--warn">
+                  {gaps.by_type.STOCK.symbols_with_gaps}
+                </span>
+              </div>
+            </div>
             <div className="health-stock-search">
               <input
                 type="text"
@@ -489,7 +518,7 @@ export function HealthDashboard() {
                 className="health-stock-search__input"
               />
               <span className="health-stock-search__count">
-                显示 {filteredGapDetails.length} / {gaps.details.length} 个品种
+                显示 {filteredGapDetails.length} / {gaps.details.length} 个有缺口的品种
               </span>
             </div>
             <div className="health-stock-list">

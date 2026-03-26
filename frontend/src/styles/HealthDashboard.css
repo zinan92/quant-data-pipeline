@@ -254,6 +254,43 @@
 }
 
 /* Per-Stock Drill-Down */
+.health-stock-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+}
+
+.health-stock-summary__item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.health-stock-summary__label {
+  font-size: 0.75rem;
+  color: rgba(230, 237, 247, 0.5);
+  font-weight: 500;
+}
+
+.health-stock-summary__value {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #e6edf7;
+}
+
+.health-stock-summary__value--ok {
+  color: #22c55e;
+}
+
+.health-stock-summary__value--warn {
+  color: #eab308;
+}
+
 .health-stock-search {
   display: flex;
   justify-content: space-between;
