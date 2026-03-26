@@ -1,0 +1,202 @@
+{
+  "groupId": "stock-backfill",
+  "testedAt": "2026-03-25T23:45:00Z",
+  "isolation": {
+    "surface": "shell (sqlite3 queries + code inspection)",
+    "projectRoot": "/Users/wendy/work/trading-co/ashare",
+    "database": "data/market.db",
+    "pythonVenv": ".venv/bin/python",
+    "readOnly": true
+  },
+  "toolsUsed": ["sqlite3", "grep", "read"],
+  "assertions": [
+    {
+      "id": "VAL-BACKFILL-001",
+      "title": "Stock Daily Data Covers 5-Year Date Range",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Run query: SELECT symbol_code, MIN(trade_time) FROM klines WHERE symbol_type='STOCK' AND timeframe='DAY' GROUP BY symbol_code HAVING MIN(trade_time) > '2021-06-01'",
+          "expected": "Only post-2021 IPO stocks returned (those with list_date > 20210101)",
+          "observed": "341 pre-2021 stocks returned with start dates after 2021-06-01. Most start from 2025-08-06."
+        },
+        {
+          "action": "Cross-reference with stock_basic.list_date to identify pre-2021 stocks",
+          "expected": "0 pre-2021 stocks with start dates after 2021-06-01",
+          "observed": "341 pre-2021 stocks have data starting only from 2025-08-06, NOT from 2021-01-04"
+        },
+        {
+          "action": "Check overall row count distribution",
+          "expected": "Pre-2021 stocks should have ~1264 rows (5 years of daily data)",
+          "observed": "Only 2 stocks (000001, 000002) have 1264 rows. 415 stocks have 100-199 rows (~8 months). 6 stocks have < 100 rows."
+        }
+      ],
+      "evidence": {
+        "queryOutput": "historical-backfill/stock-backfill/VAL-BACKFILL-001-query-output.txt",
+        "consoleErrors": "none"
+      },
+      "issues": "5-year backfill has NOT been executed for the vast majority of stocks. 341 out of 343 pre-2021 stocks have data starting only from 2025-08-06 (not 2021-01-04). Only 2 stocks (000001, 000002) have complete 5-year daily data."
+    },
+    {
+      "id": "VAL-BACKFILL-002",
+      "title": "Sufficient Row Count Per Stock",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Run query: SELECT symbol_code, COUNT(*) AS cnt FROM klines WHERE symbol_type='STOCK' AND timeframe='DAY' GROUP BY symbol_code HAVING cnt < 1000",
+          "expected": "Only post-2021 IPO stocks returned",
+          "observed": "421 stocks returned with < 1000 rows, including 341 pre-2021 stocks"
+        },
+        {
+          "action": "Check row count distribution",
+          "expected": "Pre-2021 stocks should have >= 1100 rows",
+          "observed": "415 stocks have 100-199 rows (mostly 152). Only 2 stocks have 1000+ rows."
+        }
+      ],
+      "evidence": {
+        "queryOutput": "historical-backfill/stock-backfill/VAL-BACKFILL-002-query-output.txt",
+        "consoleErrors": "none"
+      },
+      "issues": "341 pre-2021 stocks have far fewer than 1000 rows (most have only 152 rows). The 5-year backfill has not been completed."
+    },
+    {
+      "id": "VAL-BACKFILL-003",
+      "title": "No Significant Gaps in Stock Daily Data",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Sample 50 stocks and compare kline dates vs trade_calendar within their actual data range",
+          "expected": "Each stock has <= 30 missing trading days (AGENTS.md suspension allowance)",
+          "observed": "Within the existing narrow data range (Aug 2025 - Mar 2026), gaps are minimal: worst case 5 missing days for 1 stock, most have 0 gaps."
+        },
+        {
+          "action": "Check if data range covers 5-year period as required for meaningful gap analysis",
+          "expected": "Data should span 2021-01-04 to 2026-03-25",
+          "observed": "Most stocks only have data from 2025-08-06 to 2026-03-25 (~8 months). Only 2 stocks have 5-year range. Gap analysis on the narrow range passes, but the 5-year backfill prerequisite is not met."
+        }
+      ],
+      "evidence": {
+        "queryOutput": "historical-backfill/stock-backfill/VAL-BACKFILL-003-gap-analysis.txt",
+        "consoleErrors": "none"
+      },
+      "issues": "Within the existing data range, gaps are minimal (max 5 days, within the 30-day suspension allowance). However, the 5-year backfill prerequisite has not been met — most stocks only have ~8 months of data. The assertion effectively cannot be properly evaluated because the full 5-year data is missing."
+    },
+    {
+      "id": "VAL-BACKFILL-008",
+      "title": "Backfill Scripts Are Idempotent",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run duplicate check query: SELECT symbol_type, symbol_code, timeframe, trade_time, COUNT(*) FROM klines GROUP BY 1,2,3,4 HAVING COUNT(*) > 1",
+          "expected": "0 rows (no duplicates)",
+          "observed": "0 rows returned — no duplicate kline records exist in the database"
+        },
+        {
+          "action": "Inspect code for UPSERT/INSERT OR IGNORE logic in kline_repository.py",
+          "expected": "Uses UPSERT or ON CONFLICT to prevent duplicates",
+          "observed": "kline_repository.py upsert_batch() uses sqlite_insert().on_conflict_do_update() with index_elements=['symbol_code', 'symbol_type', 'timeframe', 'trade_time']. This is a proper UPSERT that overwrites on conflict."
+        },
+        {
+          "action": "Verify backfill script uses the UPSERT path",
+          "expected": "backfill_stock_daily.py calls save_klines() which uses upsert_batch()",
+          "observed": "Confirmed: backfill_stock_daily.py -> KlineService.save_klines() -> kline_repository.upsert_batch()"
+        }
+      ],
+      "evidence": {
+        "queryOutput": "historical-backfill/stock-backfill/VAL-BACKFILL-008-idempotency.txt",
+        "codeSnippet": "stmt = sqlite_insert(Kline).values(kline_dicts); stmt = stmt.on_conflict_do_update(index_elements=['symbol_code', 'symbol_type', 'timeframe', 'trade_time'], set_={...})",
+        "consoleErrors": "none"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-BACKFILL-009",
+      "title": "Backfill Scripts Support Resume",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Inspect backfill_stock_daily.py for per-symbol MAX(trade_time) check",
+          "expected": "Script checks existing data per stock and skips/resumes accordingly",
+          "observed": "get_existing_data_range() queries MAX(trade_time) per stock. should_skip_stock() checks if stock already has complete 5-year data (recent max_date AND min_date <= 2021-01-04). If not skipped, start_date is adjusted to day after max_existing_date."
+        },
+        {
+          "action": "Check for 'skipping' log messages in code",
+          "expected": "Code logs when skipping already-complete stocks",
+          "observed": "Line 284: logger.info(f'  {ticker} ({name}): Already has complete 5-year data, skipping'). Progress logging includes skip_count."
+        },
+        {
+          "action": "Verify resume adjusts start_date from last checkpoint",
+          "expected": "If interrupted, restart fetches from day after last available date",
+          "observed": "Lines 299-309: If existing_dt >= target_dt, start_date = next_day after max_existing_date. If existing data is before target start, fetches from TARGET_START_DATE."
+        }
+      ],
+      "evidence": {
+        "queryOutput": "historical-backfill/stock-backfill/VAL-BACKFILL-009-resume-logic.txt",
+        "codeSnippet": "should_skip_stock() checks max_date within 30 days AND min_date <= 2021-01-04+7d; get_existing_data_range() queries MAX(trade_time); start_date adjusted to next_day after max_existing_date",
+        "consoleErrors": "none"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-BACKFILL-012",
+      "title": "All ~1000 Stocks Backfilled",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Run query: SELECT COUNT(DISTINCT symbol_code) FROM klines WHERE symbol_type='STOCK' AND timeframe='DAY'",
+          "expected": ">= 800 distinct stocks",
+          "observed": "423 distinct stocks"
+        },
+        {
+          "action": "Check watchlist count for reference",
+          "expected": "Watchlist should have ~1000+ stocks (expanded universe)",
+          "observed": "Watchlist has 1938 entries, but only 423 have any daily kline data"
+        }
+      ],
+      "evidence": {
+        "queryOutput": "historical-backfill/stock-backfill/VAL-BACKFILL-012-stock-count.txt",
+        "consoleErrors": "none"
+      },
+      "issues": "Only 423 distinct stocks have daily kline data, well below the 800 pass threshold and below the 600 fail threshold. The backfill has not been run for the expanded stock universe."
+    },
+    {
+      "id": "VAL-BACKFILL-021",
+      "title": "Post-2021 IPO Stocks Backfilled from List Date",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Query post-2021 IPO stocks: compare MIN(trade_time) with list_date",
+          "expected": "MIN(trade_time) within 5 trading days of list_date for each post-2021 stock",
+          "observed": "All post-2021 stocks have MIN(trade_time) of 2025-08-06 or later, regardless of list_date. Day differences range from 1395 to 1595 days."
+        },
+        {
+          "action": "Check backfill script logic for list_date handling",
+          "expected": "Script uses list_date as start_date for post-2021 IPOs",
+          "observed": "Code in determine_start_date() correctly returns list_date if list_date > '20210101'. However, the backfill has not been run — so the logic exists but was never executed for these stocks."
+        }
+      ],
+      "evidence": {
+        "queryOutput": "historical-backfill/stock-backfill/VAL-BACKFILL-021-post2021-ipo.txt",
+        "codeSnippet": "determine_start_date(): if list_date > TARGET_START_DATE: return list_date",
+        "consoleErrors": "none"
+      },
+      "issues": "Post-2021 IPO stocks all have data starting from 2025-08-06, not from their list_date. Example: stock 688626 (listed 2021-03-31) has data starting 2025-08-12 (1595 days late). The backfill script has the correct logic but was never executed."
+    }
+  ],
+  "frictions": [
+    {
+      "description": "stock_basic.list_date is in YYYYMMDD format while klines.trade_time is in YYYY-MM-DD format, requiring format conversion for cross-referencing",
+      "resolved": true,
+      "resolution": "Used SQLite substr() for format conversion in JOIN conditions",
+      "affectedAssertions": ["VAL-BACKFILL-001", "VAL-BACKFILL-002", "VAL-BACKFILL-021"]
+    },
+    {
+      "description": "stock_basic.ts_code uses exchange suffix (.SZ/.SH/.BJ) while klines.symbol_code uses bare 6-digit codes, requiring suffix mapping in JOIN",
+      "resolved": true,
+      "resolution": "Used OR condition in JOIN: k.symbol_code || '.SZ' = sb.ts_code OR k.symbol_code || '.SH' = sb.ts_code OR k.symbol_code || '.BJ' = sb.ts_code",
+      "affectedAssertions": ["VAL-BACKFILL-001", "VAL-BACKFILL-002", "VAL-BACKFILL-021"]
+    }
+  ],
+  "blockers": [],
+  "summary": "Tested 7 assertions: 2 passed (VAL-BACKFILL-008 idempotency, VAL-BACKFILL-009 resume logic), 5 failed (VAL-BACKFILL-001 date range, VAL-BACKFILL-002 row count, VAL-BACKFILL-003 gaps, VAL-BACKFILL-012 stock coverage, VAL-BACKFILL-021 post-2021 IPO start dates). The core issue is that the 5-year stock daily backfill has NOT been executed — only 2 of 423 stocks have full 5-year data, and only 423 of ~1000+ expected stocks have any data at all. The backfill scripts themselves are well-coded (proper UPSERT, resume logic, list_date handling) but were never run to completion."
+}

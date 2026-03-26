@@ -307,3 +307,158 @@ async def unified_health_check(db: Session = Depends(get_db)) -> Dict[str, Any]:
         "quant": quant,
         "qualitative": qualitative,
     }
+
+
+@router.get("/gaps")
+def get_health_gaps(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """
+    Gap detection endpoint: cross-references trade_calendar with klines to find missing trading days.
+    
+    Returns:
+        - total_gaps: Total count of missing trading days across all symbols
+        - by_type: Breakdown by symbol type (STOCK/INDEX)
+        - details: Top 50 symbols with most gaps (symbol_code, symbol_type, gap_count, missing_dates)
+        - calendar_coverage: Trade calendar metadata (min_date, max_date, trading_days)
+    """
+    from src.models import TradeCalendar, Kline, SymbolType, KlineTimeframe
+    from sqlalchemy import func, select
+    
+    # 1. Get calendar coverage
+    cal_min = db.execute(select(func.min(TradeCalendar.date)).filter(TradeCalendar.is_trading_day == 1)).scalar()
+    cal_max = db.execute(select(func.max(TradeCalendar.date)).filter(TradeCalendar.is_trading_day == 1)).scalar()
+    trading_day_count = db.execute(select(func.count()).select_from(TradeCalendar).filter(TradeCalendar.is_trading_day == 1)).scalar()
+    
+    calendar_coverage = {
+        "min_date": cal_min or "unknown",
+        "max_date": cal_max or "unknown",
+        "trading_days": trading_day_count or 0
+    }
+    
+    # 2. Get all trading days from calendar (2021-01-04 onwards)
+    trading_days_result = db.execute(
+        select(TradeCalendar.date)
+        .filter(TradeCalendar.is_trading_day == 1, TradeCalendar.date >= "2021-01-04")
+        .order_by(TradeCalendar.date)
+    ).fetchall()
+    trading_days = {row[0] for row in trading_days_result}
+    
+    # 3. Get all tracked symbols (both STOCK and INDEX) with their names
+    symbols_result = db.execute(
+        select(Kline.symbol_code, Kline.symbol_name, Kline.symbol_type)
+        .filter(
+            Kline.timeframe == KlineTimeframe.DAY,
+            Kline.symbol_type.in_([SymbolType.STOCK, SymbolType.INDEX])
+        )
+        .distinct()
+    ).fetchall()
+    
+    # 4. For each symbol, find gaps
+    gap_details = []
+    by_type = {
+        "STOCK": {"symbols_with_gaps": 0, "total_missing_days": 0},
+        "INDEX": {"symbols_with_gaps": 0, "total_missing_days": 0}
+    }
+    
+    for symbol_code, symbol_name, symbol_type in symbols_result:
+        # Get all kline dates for this symbol
+        kline_dates_result = db.execute(
+            select(Kline.trade_time)
+            .filter(
+                Kline.symbol_code == symbol_code,
+                Kline.symbol_type == symbol_type,
+                Kline.timeframe == KlineTimeframe.DAY
+            )
+        ).fetchall()
+        
+        # Extract date part (first 10 chars: YYYY-MM-DD)
+        kline_dates = {row[0][:10] for row in kline_dates_result if row[0]}
+        
+        # Find missing dates
+        missing = trading_days - kline_dates
+        
+        if missing:
+            missing_sorted = sorted(list(missing))
+            symbol_type_str = symbol_type.value.upper()  # Convert to uppercase for consistency
+            gap_details.append({
+                "symbol_code": symbol_code,
+                "symbol_name": symbol_name or symbol_code,
+                "symbol_type": symbol_type_str,
+                "gap_count": len(missing),
+                "missing_dates": missing_sorted
+            })
+            
+            # Update by_type stats
+            by_type[symbol_type_str]["symbols_with_gaps"] += 1
+            by_type[symbol_type_str]["total_missing_days"] += len(missing)
+    
+    # 5. Sort by gap_count descending, limit to top 50 for performance
+    gap_details.sort(key=lambda x: x["gap_count"], reverse=True)
+    top_50_details = gap_details[:50]
+    
+    # 6. Calculate total_gaps
+    total_gaps = sum(detail["gap_count"] for detail in gap_details)
+    
+    return {
+        "total_gaps": total_gaps,
+        "by_type": by_type,
+        "details": top_50_details,
+        "calendar_coverage": calendar_coverage
+    }
+
+
+@router.get("/consistency")
+async def get_health_consistency(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """
+    Data consistency endpoint: runs DataConsistencyValidator and returns results.
+    
+    Returns:
+        - summary: total_validated, total_inconsistencies, consistency_rate, is_healthy
+        - indexes: List of index validation results
+        - concepts: List of concept validation results
+        - inconsistencies: List of items with inconsistencies
+    """
+    from src.services.data_consistency_validator import DataConsistencyValidator
+    
+    validator = DataConsistencyValidator.create_with_session(db)
+    results = await validator.validate_all()
+    
+    return results
+
+
+@router.get("/failures")
+def get_health_failures(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """
+    Recent failures endpoint: returns last 50 DataUpdateLog failures ordered by recency.
+    
+    Returns:
+        - failures: List of failed updates with update_type, error_message, started_at, etc.
+        - count: Total number of failures returned
+    """
+    from src.models import DataUpdateLog, DataUpdateStatus
+    from sqlalchemy import desc, select
+    
+    failed_logs = db.execute(
+        select(DataUpdateLog)
+        .filter(DataUpdateLog.status == DataUpdateStatus.FAILED)
+        .order_by(desc(DataUpdateLog.started_at))
+        .limit(50)
+    ).scalars().all()
+    
+    failures = []
+    for log in failed_logs:
+        failures.append({
+            "id": log.id,
+            "update_type": log.update_type,
+            "symbol_type": log.symbol_type,
+            "timeframe": log.timeframe,
+            "status": log.status.value.upper(),  # Convert to uppercase for consistency
+            "records_updated": log.records_updated,
+            "error_message": log.error_message,
+            "started_at": log.started_at.isoformat() if log.started_at else None,
+            "completed_at": log.completed_at.isoformat() if log.completed_at else None
+        })
+    
+    return {
+        "failures": failures,
+        "count": len(failures)
+    }
