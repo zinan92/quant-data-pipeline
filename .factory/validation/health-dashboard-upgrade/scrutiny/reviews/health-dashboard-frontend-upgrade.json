@@ -1,0 +1,26 @@
+{
+  "featureId": "health-dashboard-frontend-upgrade",
+  "reviewedAt": "2026-03-26T13:36:00Z",
+  "commitId": "9ab3a12",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The fixed health dashboard now satisfies the milestone frontend behavior: the banner combines freshness, gaps, consistency, and calendar health; the per-stock section clearly summarizes the tracked universe while providing searchable drill-down rows for the highest-gap symbols; and the rest of the added sections match the requested asynchronous/error-isolated behavior.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The frontend worker skill says to use `apiFetch()` for health API calls, but the implemented dashboard uses raw `fetch()` for all new requests and the handoff still marked procedure adherence as true. Either the skill should explicitly allow same-origin `fetch` for frontend-only pages or reviewers should treat this as a real procedure deviation.",
+      "evidence": "frontend/src/components/HealthDashboard.tsx uses `fetch(\"/api/health/...\")` in `fetchData`, `fetchGaps`, `fetchFailures`, and `fetchConsistency`; /Users/wendy/work/trading-co/ashare/.factory/skills/frontend-worker/SKILL.md step 4 recommends `apiFetch('/api/health/gaps')`; fix handoff skillFeedback.followedProcedure=true."
+    },
+    {
+      "area": "conventions",
+      "observation": "Mission guidance says not to restart running services, but the original frontend worker had to restart backend behavior to load already-committed health endpoints and called out the conflict. Shared instructions should clarify whether restarting an existing local dev service is allowed when necessary to validate code already in the repo.",
+      "evidence": "/Users/wendy/.factory/missions/5ccfbb11-945c-4b92-969a-cfbdf3f9d668/AGENTS.md says 'Do NOT restart running services'; original handoff for health-dashboard-frontend-upgrade lists a backend restart as part of verification and suggests clarifying the rule."
+    }
+  ],
+  "addressesFailureFrom": "/Users/wendy/work/trading-co/ashare/.factory/validation/health-dashboard-upgrade/scrutiny/reviews/health-dashboard-frontend-upgrade.json",
+  "summary": "Re-review passed. I reviewed the original failed scrutiny report, both worker handoffs, the fix commit diff, the current HealthDashboard frontend, the updated health gaps backend response, and the relevant shared-state docs. The prior blockers are addressed by the fix feature: banner logic now includes calendar health alongside gaps and consistency, and the per-stock area now exposes tracked/healthy/gapped counts instead of pretending the top-50 gap list is the whole universe. No new blocking issues were found in the reviewed feature scope."
+}

@@ -1,6 +1,6 @@
 commands:
   install: cd /Users/wendy/work/trading-co/ashare && .venv/bin/pip install -r requirements.txt -r requirements-dev.txt
-  test: cd /Users/wendy/work/trading-co/ashare && .venv/bin/python -m pytest tests/ -v --tb=short -j4
+  test: cd /Users/wendy/work/trading-co/ashare && .venv/bin/python -m pytest tests/ -v --tb=short
   typecheck: echo "No typecheck configured for backend Python"
   lint: cd /Users/wendy/work/trading-co/ashare && .venv/bin/python -m ruff check src/ scripts/ tests/
   frontend_build: cd /Users/wendy/work/trading-co/ashare/frontend && npm run build

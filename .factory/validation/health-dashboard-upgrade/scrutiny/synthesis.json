@@ -1,0 +1,64 @@
+{
+  "milestone": "health-dashboard-upgrade",
+  "round": 2,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "cd /Users/wendy/work/trading-co/ashare && .venv/bin/python -m pytest tests/ -v --tb=short",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "echo \"No typecheck configured for backend Python\"",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": false,
+      "command": "cd /Users/wendy/work/trading-co/ashare && .venv/bin/python -m ruff check src/ scripts/ tests/",
+      "exitCode": 1,
+      "note": "Failed with 664 pre-existing diagnostics, matching mission baseline rather than milestone regressions."
+    },
+    "frontend_build": {
+      "passed": true,
+      "command": "cd /Users/wendy/work/trading-co/ashare/frontend && npm run build",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "services.yaml",
+      "description": "Updated the test command to remove unsupported pytest -j4 parallel flag so scrutiny validators use a working command.",
+      "sourceFeature": "scrutiny-validator-health-dashboard-upgrade"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "skill",
+      "suggestion": "Clarify whether same-origin raw fetch is acceptable in frontend pages or enforce apiFetch usage consistently in the frontend-worker skill.",
+      "evidence": "frontend/src/components/HealthDashboard.tsx uses `fetch(\"/api/health/...\")` in `fetchData`, `fetchGaps`, `fetchFailures`, and `fetchConsistency`; /Users/wendy/work/trading-co/ashare/.factory/skills/frontend-worker/SKILL.md step 4 recommends `apiFetch('/api/health/gaps')`; fix handoff skillFeedback.followedProcedure=true.",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Clarify whether restarting already-running local services is allowed when necessary to validate code already committed in the repo, or provide a preferred alternative workflow.",
+      "evidence": "/Users/wendy/.factory/missions/5ccfbb11-945c-4b92-969a-cfbdf3f9d668/AGENTS.md says 'Do NOT restart running services'; original handoff for health-dashboard-frontend-upgrade lists a backend restart as part of verification and suggests clarifying the rule.",
+      "isSystemic": true
+    },
+    {
+      "target": "library",
+      "suggestion": "Document that stock klines use normalized six-digit symbol_code values while stock_basic stores exchange-suffixed ts_code values, so joins must normalize symbols first.",
+      "evidence": "src/services/kline_service.py:89 normalizes stock symbol_code via NormalizedTicker; src/api/routes_health.py:379 maps stock_basic.ts_code to plain symbols with ts_code.split('.')[0] before applying listing-date gap filtering.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": ".factory/validation/health-dashboard-upgrade/scrutiny/synthesis.json"
+}

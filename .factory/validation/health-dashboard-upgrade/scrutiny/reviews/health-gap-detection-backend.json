@@ -1,0 +1,21 @@
+{
+  "featureId": "health-gap-detection-backend",
+  "reviewedAt": "2026-03-26T05:38:00Z",
+  "commitId": "e8a9d47",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Re-reviewed the original backend feature against the current code after the fix feature landed. The backend now correctly constrains stock gap expectations by listing date, handles normalized stock symbol codes, keeps index behavior on the 2021 backfill range, and still provides the requested consistency and recent-failures endpoints with test coverage.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "Shared mission knowledge should explicitly note that stock daily klines use normalized six-digit symbol codes while stock_basic stores exchange-suffixed ts_code values. The original backend feature missed this and needed a follow-up fix to split ts_code before matching listing dates.",
+      "evidence": "src/services/kline_service.py:89 normalizes stock symbol_code via NormalizedTicker; src/api/routes_health.py:379 maps stock_basic.ts_code to plain symbols with ts_code.split('.')[0] before applying listing-date gap filtering."
+    }
+  ],
+  "addressesFailureFrom": "/Users/wendy/work/trading-co/ashare/.factory/validation/health-dashboard-upgrade/scrutiny/reviews/health-gap-detection-backend.json",
+  "summary": "Reviewed mission artifacts, original and fix handoffs, commit e8a9d47 diff, current routes/tests, backend skill, and shared state docs. Result: pass on re-review because the current backend implementation now satisfies the intended gap detection, consistency, and failures behavior with the original blocking issues resolved by the follow-up fix."
+}
