@@ -172,7 +172,7 @@ quant-data-pipeline/
 │   │   ├── kline_service.py    # K线服务
 │   │   ├── simulated_service.py# 模拟交易
 │   │   ├── crypto_service.py   # 加密货币
-│   │   └── ...                 # 40+ 服务模块
+│   │   └── ...                 # 70+ 服务模块
 │   ├── perception/             # 感知管线
 │   │   ├── pipeline.py         # 管线编排
 │   │   ├── aggregator.py       # 信号聚合
@@ -190,7 +190,7 @@ quant-data-pipeline/
 │   ├── src/components/         # UI 组件
 │   ├── src/hooks/              # 自定义 Hooks
 │   └── src/types/              # TypeScript 类型
-├── scripts/                    # 脚本工具 (120+ 文件)
+├── scripts/                    # 脚本工具 (110+ 文件)
 │   ├── full_briefing.py        # A股每日简报
 │   ├── us_briefing_v2.py       # 美股每日简报
 │   └── ...
@@ -206,13 +206,13 @@ quant-data-pipeline/
 | 环境变量 | 说明 | 默认值 |
 |----------|------|--------|
 | `TUSHARE_TOKEN` | TuShare Pro API Token（必填） | — |
-| `TUSHARE_POINTS` | TuShare 积分等级 | `15000` |
-| `TUSHARE_DELAY` | TuShare 请求间隔（秒） | `0.3` |
+| `TUSHARE_POINTS` | TuShare 积分等级 | `120` |
+| `TUSHARE_DELAY` | TuShare 请求间隔（秒） | `0.5` |
 | `DATABASE_URL` | 数据库连接字符串 | `sqlite:///data/market.db` |
 | `DEFAULT_SYMBOLS` | 默认自选股（逗号分隔） | `600519,601318,...` |
-| `CANDLE_LOOKBACK` | K线回溯天数 | `120` |
+| `CANDLE_LOOKBACK` | K线回溯天数 | `200` |
 | `ALLOW_ORIGINS` | CORS 允许的前端地址 | `http://localhost:5173` |
-| `DAILY_REFRESH_CRON` | 每日刷新 cron 表达式 | `10 18 * * 1-5` |
+| `DAILY_REFRESH_CRON` | 每日刷新 cron 表达式 | `30 16 * * 1-5` |
 | `SCHEDULER_TIMEZONE` | 调度时区 | `Asia/Shanghai` |
 | `PARK_INTEL_URL` | qualitative-data-pipeline 地址 | `http://127.0.0.1:8001` |
 | `ENABLE_CONCEPT_BOARDS` | 启用概念板块 | `true` |
@@ -287,26 +287,6 @@ async def agent_workflow():
         news = (await c.get(f"{BASE}/news/latest")).json()
 
         return {"watchlist": watchlist, "klines": klines, "signals": signals, "news": news}
-```
-
-### MCP / Tool-Use Interface
-
-```json
-{
-  "tool": "quant-data-pipeline",
-  "actions": [
-    {"name": "get_klines",    "method": "GET",  "path": "/api/candles/{ticker}"},
-    {"name": "get_realtime",  "method": "GET",  "path": "/api/realtime/prices"},
-    {"name": "get_watchlist", "method": "GET",  "path": "/api/watchlist"},
-    {"name": "get_news",      "method": "GET",  "path": "/api/news/latest"},
-    {"name": "scan_signals",  "method": "POST", "path": "/api/perception/scan"},
-    {"name": "screen_stocks", "method": "POST", "path": "/api/screener/scan"},
-    {"name": "get_us_stock",  "method": "GET",  "path": "/api/us-stock/indexes"},
-    {"name": "get_crypto",    "method": "GET",  "path": "/api/crypto"},
-    {"name": "sim_buy",       "method": "POST", "path": "/api/simulated/buy"},
-    {"name": "sim_sell",      "method": "POST", "path": "/api/simulated/sell"}
-  ]
-}
 ```
 
 ## 相关项目
